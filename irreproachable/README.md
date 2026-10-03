@@ -3,11 +3,13 @@
 Keep a Paseo agent working toward a goal until the agent says it is met.
 
 ```
-irreproachable new "<goal>" [--steer-every 30m] [--idle-after 1m] [--steer-prompt TEXT] [--agent ID]
+irreproachable new "<goal>" [--steer-every DUR] [--idle-after DUR] [--steer-prompt TEXT] [--agent ID]
 irreproachable clear [--agent ID]
 irreproachable mute [DURATION] [--agent ID]
 irreproachable unmute [--agent ID]
 irreproachable ls
+irreproachable help
+irreproachable reset-defaults
 irreproachable --selftest [SECTION ...]
 ```
 
@@ -26,6 +28,13 @@ agent from a plain shell. A detached watcher then sends two kinds of message:
 Nothing is sent while the agent has a pending permission request: it is waiting on you. `mute [DURATION]` holds
 goal prompts only (steers keep their cadence) for up to 1h, the default; `unmute` ends it early. The agent ends the goal
 with `irreproachable clear`. `ls` shows every goal as `watching`, `watching (muted 12m)` or `ENDED <why>`.
+
+## Defaults
+
+`~/.irreproachable-defaults.conf` holds the steer text (`{goal}` marks where the goal goes), the steer
+interval and the idle time, each explained in the file. `new` reads it, its flags override it for one goal,
+and a running goal keeps what it started with. `irreproachable reset-defaults` restores the shipped file;
+`irreproachable help` shows the current values and the path.
 
 ## How it decides
 

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """irreproachable — keep a Paseo agent working toward a goal until it says the goal is met.
 
-    irreproachable new "<goal>" [--steer-every 30m] [--idle-after 6m] [--steer-prompt TEXT] [--agent ID]
+    irreproachable new "<goal>" [--steer-every DUR] [--idle-after DUR] [--steer-prompt TEXT] [--agent ID]
     irreproachable clear [--agent ID]
     irreproachable mute [DURATION] [--agent ID]
     irreproachable unmute [--agent ID]
     irreproachable ls
+    irreproachable help | reset-defaults
     irreproachable --selftest
 
 Run `new` inside a Paseo agent and it governs that agent ($PASEO_AGENT_ID). A detached watcher
@@ -22,16 +23,14 @@ because the agent harness kills process trees when a tool call ends.
 State lives in ~/.irreproachable/<agent-id>/. `meta.json` is written once, by the watcher.
 `log` holds `<epoch> <event>` lines; an `END <reason>` line records how a goal ended.
 """
-import argparse, datetime, filecmp, glob, json, os, re, select, shutil, signal, subprocess, sys, tempfile, time, uuid
+import argparse, configparser, datetime, filecmp, glob, json, os, re, select, shutil, signal, subprocess, sys, tempfile, time, uuid
 
 HOME          = os.path.expanduser("~/.irreproachable")
-IDLE_AFTER    = 60    # Minh's number: idle this long gets the goal prompt -- room to type after an interrupt
 WAITING_IDLE  = 360   # while one of the agent's pacemaker runs is live: pacemaker EVERY_MAX 300s (Minh's)
                       # + 60s; its pings wake the agent, so this much silence means nobody is watching it
 PACEMAKER     = os.path.expanduser("~/.pacemaker")
 START_TIMEOUT = 5     # ~300x the measured 16 ms watcher startup
 SLACK         = 5     # inspect + send wall time, 1.1 s each measured, x2 headroom
-STEER_EVERY   = 1800  # Minh's number
 MUTE_MAX      = 3600  # Minh's number: a mute is at most 1h, and that is also the default
 BUSY          = ("running", "initializing")   # Paseo BUSY_STATUSES (agent-manager.js:173)
 C_LOCALE      = {**os.environ, "LC_ALL": "C"}
@@ -49,26 +48,67 @@ IDLE_WHY     = "you have been idle {quiet} with no live pacemaker run"
 WAITING_WHY  = ("you have been idle {quiet}; a pacemaker run of yours is live but has not pinged you, so re-arm its "
                 "Monitor with --attach if it expired")
 STEER_HEADER = "[Automated Steer -- do not ignore]"
-STEER_BODY = """Give a concise, high-signal progress report to the user of your progress relative to the final goal.
-1. If you are going down a rabbit hole, only continue if it is genuinely in the way of the goal. Can this
-   be abandoned and just accepted as debt later on? Should you research better solutions either online
-   or other code?
-2. If any judgement calls need to be made, can it be done by prioritizing progress toward the goal and
-   exemplifying the code principles?
-3. Are you exemplifying any reminders stated in the goal prompt? Are you making a concentrated effort to
-   deliver and exemplify code principles?
+DEFAULT_CONF = """# irreproachable defaults -- used by `irreproachable new` for every goal registered after an edit.
+# Flags on `new` (--steer-every, --idle-after, --steer-prompt) override them for one goal. A running goal
+# keeps the values it started with. `irreproachable reset-defaults` restores this file.
+#
+# A goal's watcher sends the agent two kinds of message:
+#   goal prompt  re-sends the goal once the agent has sat idle for idle_after. 1m gives you time to
+#                interrupt it, type and rethink without it being prompted every time it stops. While
+#                one of the agent's pacemaker runs is live, the wait is 6m instead.
+#   steer        every steer_every, interrupting the agent if it is busy: "[Automated Steer -- do not
+#                ignore]" followed by steer_text, with {goal} replaced by the goal.
+#
+# Durations are a number and s, m or h: 30s, 1m, 2h. steer_text continues on lines indented by four
+# spaces; a blank line between them keeps a paragraph break.
 
-Remember, all that matters to the user is the accomplishment of the goal in an irreproachable manner,
-exemplifying code-principles, and simplicity, whether it takes subagents, code-review, probes,
-decisions made, etc."""
-# A steer interrupts a busy agent (Paseo has no queue); this line makes it carry on afterwards (measured).
-RESUME = ("If this message cut off a tool call, that was deliberate and is not a rejection or an error. Report, "
-          "then immediately redo the interrupted step and carry on in this same turn. Do not stop to ask.")
+[defaults]
+steer_every = 30m
+idle_after = 1m
+steer_text =
+    Give a concise, high-signal progress report to the user of your progress relative to the final goal.
+    1. If you are going down a rabbit hole, only continue if it is genuinely in the way of the goal. Can this be abandoned and just accepted as debt later on? Should you research better solutions either online or other code?
+    2. If any judgement calls need to be made, can it be done by prioritizing progress toward the goal and exemplifying the code principles?
+    3. Are you exemplifying any reminders stated in the goal prompt? Are you making a concentrated effort to deliver and exemplify code principles?
 
+    Remember, all that matters to the user is the accomplishment of the goal in an irreproachable manner, exemplifying code-principles, and simplicity, whether it takes subagents, code-review, probes, decisions made, etc.
+
+    If this message cut off a tool call, that was deliberate and is not a rejection or an error. Report, then immediately redo the interrupted step and carry on in this same turn. Do not stop to ask.
+
+    [Goal Prompt Reminder]
+    {goal}
+"""
+
+
+def defaults_path():
+    return os.environ.get("IRREPROACHABLE_DEFAULTS") or os.path.expanduser("~/.irreproachable-defaults.conf")
+
+
+def write_defaults():
+    path = defaults_path()
+    tmp = f"{path}.tmp.{os.getpid()}"
+    with open(tmp, "w") as f:
+        f.write(DEFAULT_CONF)
+    os.replace(tmp, path)
+    return path
+
+
+def load_defaults():
+    """The defaults file, created from DEFAULT_CONF on first use. A broken file stops the command, naming it."""
+    path = defaults_path()
+    if not os.path.exists(path):
+        write_defaults()
+    c = configparser.ConfigParser(interpolation=None)
+    try:
+        c.read(path)
+        d = c["defaults"]
+        return {"steer_every": dur(d["steer_every"]), "idle_after": dur(d["idle_after"]),
+                "steer_text": d["steer_text"].strip()}
+    except (KeyError, configparser.Error, argparse.ArgumentTypeError) as e:
+        die(2, f"{path}: {e} -- fix it, or run `irreproachable reset-defaults`")
 
 def steer_text(cfg):
-    return (f"{STEER_HEADER}\n{cfg['steer_prompt'] or STEER_BODY}\n\n{RESUME}\n\n"
-            f"[Goal Prompt Reminder]\n{cfg['goal']}")
+    return f"{STEER_HEADER}\n{cfg['steer_text'].replace('{goal}', cfg['goal'])}"
 
 
 def dur(s):
@@ -317,7 +357,7 @@ def watch(cfg):
     assert started, "ps -o lstart= failed"     # a null lstart would make a dead watcher look alive
     write_meta(aid, {"pid": me, "lstart": started, "token": tok, "goal": cfg["goal"],
                      "idle_after": cfg["idle_after"], "steer_every": cfg["steer_every"],
-                     "steer_prompt": cfg["steer_prompt"], "started": time.time()})
+                     "steer_text": cfg["steer_text"], "started": time.time()})
     log(aid, f"START {tok}")
     last_sent, next_steer = 0.0, time.time() + cfg["steer_every"]
 
@@ -381,6 +421,8 @@ def watch(cfg):
 # --------------------------------------------------------------------------------------------- commands
 
 def cmd_new(a):
+    d = load_defaults()
+    idle_after, steer_every = a.idle_after or d["idle_after"], a.steer_every or d["steer_every"]
     aid = resolve_agent(a.agent)
     try:
         info = paseo("inspect", aid)
@@ -398,14 +440,14 @@ def cmd_new(a):
         except ProcessLookupError:
             pass
     token = uuid.uuid4().hex
-    spawn({"aid": aid, "token": token, "goal": a.goal, "idle_after": a.idle_after,
-           "steer_every": a.steer_every, "steer_prompt": a.steer_prompt})
+    spawn({"aid": aid, "token": token, "goal": a.goal, "idle_after": idle_after,
+           "steer_every": steer_every, "steer_text": a.steer_prompt or d["steer_text"]})
     deadline = time.time() + START_TIMEOUT
     while time.time() < deadline:
         m = read_meta(aid)
         if m and m["token"] == token:
             print(f"{'replaced goal on' if replacing else 'watching'} {aid[:8]} — goal prompt after "
-                  f"{fmt(a.idle_after)} idle, steer every {fmt(a.steer_every)}")
+                  f"{fmt(idle_after)} idle, steer every {fmt(steer_every)}")
             return
         time.sleep(0.05)
     die(1, f"watcher did not start (see {log_path(aid)})")
@@ -459,6 +501,8 @@ def selftest(only):
     if os.getuid() == 0:
         die(1, "do not run as root — irreproachable is a per-user tool")
     os.environ.pop("PASEO_AGENT_ID", None)     # the suite runs inside Minh's agent; never govern it
+    DEFS = os.path.join(tempfile.mkdtemp(prefix="irr-"), "defaults.conf")
+    os.environ["IRREPROACHABLE_DEFAULTS"] = DEFS    # Minh's edited defaults never change what is tested
     SELF = os.path.abspath(__file__)
     inst = shutil.which("irreproachable")
     if not (inst and filecmp.cmp(inst, SELF, shallow=False)):
@@ -541,6 +585,21 @@ def selftest(only):
             for bad in ("0s", "5"):
                 r = run("new", "x", "--idle-after", bad, "--agent", "x")
                 check(f"--idle-after {bad} is refused", r.returncode == 2 and "duration" in r.stderr, r.stderr)
+            r = run("help")
+            check("help creates a missing defaults file from the shipped one and names it",
+                  r.returncode == 0 and os.path.exists(DEFS) and open(DEFS).read() == DEFAULT_CONF and DEFS in r.stdout,
+                  r.stdout + r.stderr)
+            with open(DEFS, "w") as f:
+                f.write(DEFAULT_CONF.replace("steer_every = 30m", "steer_every = 45m").replace("idle_after = 1m", "idle_after = 2m"))
+            r = run("help")
+            check("help reports the edited defaults", "every 45m" in r.stdout and "idle 2m" in r.stdout, r.stdout)
+            with open(DEFS, "w") as f:
+                f.write("[defaults]\nidle_after = soon\n")
+            r = run("help")
+            check("a broken defaults file is refused, naming the file", r.returncode == 2 and DEFS in r.stderr, r.stderr)
+            r = run("reset-defaults")
+            check("reset-defaults restores the shipped file", r.returncode == 0 and open(DEFS).read() == DEFAULT_CONF,
+                  r.stdout + r.stderr)
 
         if want("goal"):
             print("### goal loop", flush=True)
@@ -650,17 +709,22 @@ def selftest(only):
             check("no goal prompt", sent(aid, tok, "goal") == [])
             tl = timeline(aid)
             check("the steer carried header, Minh's body, resume line and goal",
-                  "[Automated Steer" in tl and "Give a concise, high-signal" in tl and RESUME in tl
+                  "[Automated Steer" in tl and "Give a concise, high-signal" in tl and "cut off a tool call" in tl
                   and any(x.startswith(GOAL[:60]) for x in line_after(tl, "[Goal Prompt Reminder]")), tl[-1500:])
             shutil.rmtree(tmp, ignore_errors=True)
             drop(aid)
 
         if want("steer-b"):
-            print("### steer cadence and --steer-prompt", flush=True)
+            print("### steer cadence and text from the defaults file", flush=True)
             aid = spawn_agent("steer-b", "Reply to every prompt with one short sentence, then end your turn.")
             wait_for(lambda: paseo("inspect", aid)["Status"] == "idle", 120, 2)
-            run("new", "Reply to every prompt briefly.", "--agent", aid, "--steer-every", "45s", "--idle-after", "1h",
-                "--steer-prompt", "Reply with the single word PONG.")
+            with open(DEFS, "w") as f:      # no flags below: interval, idle time and text all come from here
+                f.write(DEFAULT_CONF.split("steer_text =")[0].replace("steer_every = 30m", "steer_every = 45s")
+                        .replace("idle_after = 1m", "idle_after = 1h")
+                        + "steer_text =\n    Reply with the single word PONG.\n    Goal: {goal}\n")
+            run("new", "Reply to every prompt briefly.", "--agent", aid)
+            with open(DEFS, "w") as f:
+                f.write(DEFAULT_CONF)
             m = note(read_meta(aid))
             tok = m.get("token")
             w = wstart(aid, tok) if tok else time.time()
@@ -672,8 +736,9 @@ def selftest(only):
             gaps = [b - a for a, b in zip(s, s[1:])]
             check("every gap is one interval", bool(gaps) and all(45 <= g <= 45 + SLACK for g in gaps), gaps)
             tl = timeline(aid)
-            check("--steer-prompt replaced only the body", "PONG" in tl and RESUME in tl and "[Automated Steer" in tl
-                  and "[Goal Prompt Reminder]" in tl and "Give a concise, high-signal" not in tl, tl[-1500:])
+            check("the steer is the header plus the file's text, with the goal substituted",
+                  "[Automated Steer" in tl and "PONG" in tl and "Goal: Reply to every prompt briefly." in tl
+                  and "Give a concise, high-signal" not in tl, tl[-1500:])
             check("no goal prompt", sent(aid, tok, "goal") == [])
             drop(aid)
 
@@ -770,8 +835,13 @@ def selftest(only):
                   r.stdout)
             r = run("clear", "--agent", aid[:8])
             check("clearing twice is not an error", r.returncode == 0 and "no goal" in r.stdout, r.stdout + r.stderr)
-            run("new", goal("goal three"), "--agent", aid, "--idle-after", "30s", "--steer-every", "1h")
+            run("new", goal("goal three"), "--agent", aid, "--idle-after", "30s", "--steer-every", "1h",
+                "--steer-prompt", "CUSTOM {goal}")
             m3 = note(read_meta(aid))
+            check("without --steer-prompt a goal takes the file's steer text; flags override the file",
+                  "Give a concise, high-signal" in m2.get("steer_text", "") and m2.get("idle_after") == 30
+                  and m3.get("steer_text") == "CUSTOM {goal}", (m2.get("steer_text", "")[:40], m2.get("idle_after"),
+                                                               m3.get("steer_text")))
             drop(aid)
             wait_for(lambda: gone(m3), 30 + SLACK + 5, 2)        # cheap ps check; one `ls` afterwards
             rw = row(aid) or ""
@@ -879,6 +949,7 @@ def selftest(only):
             drop(aid)
     finally:
         cleanup()
+        shutil.rmtree(os.path.dirname(DEFS), ignore_errors=True)
     listed = {a.get("id") for a in paseo("ls")}
     check("no selftest agent remains", not (listed & set(CREATED)))
     check("no watcher started by the selftest is left running",
@@ -888,6 +959,39 @@ def selftest(only):
     failed = results.count(False)
     print(f"{len(results)}/{len(results)} passed" if not failed else f"{failed} FAILED", flush=True)
     sys.exit(1 if failed else 0)
+
+
+def short(sec):
+    return next(f"{sec // u}{c}" for u, c in ((3600, "h"), (60, "m"), (1, "s")) if sec % u == 0)
+
+
+def cmd_help(_):
+    d = load_defaults()
+    print(f"""irreproachable -- keep a Paseo agent working toward a goal until the goal is met.
+
+A detached watcher sends the agent two kinds of message:
+  goal prompt  the goal again, once the agent has sat idle {short(d["idle_after"])} (6m while one of its pacemaker runs is live)
+  steer        every {short(d["steer_every"])}, interrupting if busy: a progress report and discipline check, with the goal
+The agent runs `irreproachable clear` when the goal is met.
+
+Usage
+  irreproachable new "<goal>" [--steer-every DUR] [--idle-after DUR] [--steer-prompt TEXT] [--agent ID]
+  irreproachable clear [--agent ID]          end the goal
+  irreproachable mute [DUR] [--agent ID]     hold goal prompts, at most and by default 1h; steers continue
+  irreproachable unmute [--agent ID]         end a mute early
+  irreproachable ls                          every goal and its state
+  irreproachable reset-defaults              restore the defaults file
+  irreproachable --selftest [SECTION ...]    check it against real Paseo agents (~20 min)
+Inside a Paseo agent, --agent defaults to $PASEO_AGENT_ID. DUR is 30s, 1m, 2h.
+
+Defaults  {defaults_path()}
+  Steer text, steer interval and idle time, explained in the file. Edit it to change them for new goals;
+  flags on `new` override them for one goal, and a running goal keeps what it started with.
+State     {HOME}/<agent-id>/   Docs  minh-qol-utilities/irreproachable/README.md""")
+
+
+def cmd_reset_defaults(_):
+    print(f"restored {write_defaults()}")
 
 
 def run_watcher():
@@ -912,9 +1016,9 @@ def main():
     sub = ap.add_subparsers(dest="cmd")
     p = sub.add_parser("new", help="give an agent a goal")
     p.add_argument("goal")
-    p.add_argument("--idle-after", type=dur, default=IDLE_AFTER, help="idle time before the goal prompt (default 1m; 6m while a pacemaker run of the agent is live)")
-    p.add_argument("--steer-every", type=dur, default=STEER_EVERY, help="steer cadence; interrupts if busy (default 30m)")
-    p.add_argument("--steer-prompt", help="replace the steer's body (header, resume line and goal are kept)")
+    p.add_argument("--idle-after", type=dur, help="idle time before the goal prompt (default: the defaults file)")
+    p.add_argument("--steer-every", type=dur, help="steer cadence; interrupts if busy (default: the defaults file)")
+    p.add_argument("--steer-prompt", help="steer text for this goal; {goal} is replaced by the goal")
     p.add_argument("--agent", help="agent id (default: $PASEO_AGENT_ID)")
     p = sub.add_parser("clear", help="end an agent's goal")
     p.add_argument("--agent", help="agent id or prefix (default: $PASEO_AGENT_ID)")
@@ -924,6 +1028,8 @@ def main():
     p = sub.add_parser("unmute", help="end a mute early")
     p.add_argument("--agent", help="agent id or prefix (default: $PASEO_AGENT_ID)")
     sub.add_parser("ls", help="list goals and whether each is being watched")
+    sub.add_parser("help", help="what it does, how to use it, where the defaults live")
+    sub.add_parser("reset-defaults", help="restore the defaults file to the shipped one")
     a = ap.parse_args()
     if a.selftest is not None:
         selftest(a.selftest)
@@ -937,9 +1043,10 @@ def main():
         cmd_mute(a)
     elif a.cmd == "unmute":
         cmd_unmute(a)
+    elif a.cmd == "reset-defaults":
+        cmd_reset_defaults(a)
     else:
-        ap.print_help()
-        sys.exit(2)
+        cmd_help(a)
 
 
 if __name__ == "__main__":

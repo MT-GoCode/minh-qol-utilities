@@ -44,5 +44,5 @@ case ":$PATH:" in
   *":$BINDIR:"*) ok "$BINDIR is on PATH" ;;
   *) printf '  \033[33m!\033[0m %s is not on PATH — add it to your shell rc\n' "$BINDIR" ;;
 esac
-"$BINDIR/irreproachable" --help >/dev/null || bad "the installed copy will not run"
-ok "runs — now 'irreproachable --selftest' to check it behaves correctly on this machine"
+"$BINDIR/irreproachable" help >/dev/null || bad "the installed copy will not run"   # also creates the defaults file
+ok "runs — 'irreproachable help' explains it and where its defaults live; 'irreproachable --selftest' checks it here"
