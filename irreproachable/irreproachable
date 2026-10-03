@@ -952,8 +952,9 @@ def selftest(only):
         shutil.rmtree(os.path.dirname(DEFS), ignore_errors=True)
     listed = {a.get("id") for a in paseo("ls")}
     check("no selftest agent remains", not (listed & set(CREATED)))
-    check("no watcher started by the selftest is left running",
-          bool(PIDS) and not any(lstart(p_) == l_ for p_, l_ in PIDS), PIDS)
+    if CREATED:     # a run that spawned agents must also have seen their watchers, or this check observes nothing
+        check("no watcher started by the selftest is left running",
+              bool(PIDS) and not any(lstart(p_) == l_ for p_, l_ in PIDS), PIDS)
     check("the selftest workspace was archived",
           WS not in {w.get("workspaceId") or w.get("id") for w in paseo("workspace", "ls")})
     failed = results.count(False)
