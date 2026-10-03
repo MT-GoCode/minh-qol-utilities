@@ -21,7 +21,7 @@ Python rather than shell because shell cannot do this portably: POSIX sh has no 
 `stat -c` is GNU-only, and `date -d`, `timeout`, `flock` and `setsid` are all missing on
 macOS. A shell poll loop also costs ~14,400 forks an hour.
 """
-import argparse, collections, json, os, re, shlex, shutil, signal, subprocess, sys, time
+import argparse, collections, json, os, re, shlex, shutil, signal, sys, time
 
 HOME = os.path.expanduser("~/.pacemaker")
 AGENT = os.environ.get("PASEO_AGENT_ID")   # whose run this is; irreproachable reads it to tell waiting from idle
@@ -312,10 +312,13 @@ def prune():
             total -= size
 
 
-def runs():
-    """(started, name, state, meta) for every run on this machine; state is RUNNING, died or exit N."""
+def listing():
+    """Finished runs are only reachable by --attach while they still hold the live slot;
+    once the slug is reused the old one is archived under its start time. Without a listing
+    they are invisible."""
     if not os.path.isdir(HOME):
         return
+    rows = []
     for name in sorted(os.listdir(HOME)):
         d = os.path.join(HOME, name)
         if not os.path.isdir(d) or name.startswith("."):   # .staging-* is mid-claim
@@ -333,14 +336,7 @@ def runs():
             state = "RUNNING"
         else:
             state = "died"
-        yield started, name, state, m
-
-
-def listing():
-    """Finished runs are only reachable by --attach while they still hold the live slot;
-    once the slug is reused the old one is archived under its start time. Without a listing
-    they are invisible."""
-    rows = [(started, name, state, str(m.get("cmd", ""))) for started, name, state, m in runs()]
+        rows.append((started, name, state, str(m.get("cmd", ""))))
     if not rows:
         print("no runs under " + short(HOME))
         return
@@ -1015,30 +1011,6 @@ def selftest():
                 bad.append(f"{os.path.basename(f)}:{i}: {s[:70]}")
     check(not bad, "no GNU-only constructs in the shipped files", "; ".join(bad))
 
-    # --subagents: Paseo status comes from `paseo ls` (stubbed: this check has no daemon to ask),
-    # the armed count from this machine's live runs, recorded under each run's agent id.
-    import tempfile
-    stub = tempfile.mkdtemp(prefix="pm-")
-    kids = [{"id": "kid1" + "0" * 28, "name": "idle, armed", "status": "idle"},
-            {"id": "kid2" + "0" * 28, "name": "idle, nothing armed", "status": "idle"},
-            {"id": "kid3" + "0" * 28, "name": "working", "status": "running"}]
-    with open(os.path.join(stub, "paseo"), "w") as f:
-        f.write("#!/bin/sh\ncat <<'J'\n" + json.dumps(kids) + "\nJ\n")
-    os.chmod(os.path.join(stub, "paseo"), 0o755)
-    run_dir = os.path.join(HOME, S + "subagent")
-    os.makedirs(run_dir, exist_ok=True)
-    with open(os.path.join(run_dir, "meta"), "w") as f:
-        json.dump({"pid": os.getpid(), "started": time.time(), "cmd": [], "agent": kids[0]["id"]}, f)
-    open(os.path.join(run_dir, "exit"), "w").close()
-    env = dict(os.environ, PATH=stub + os.pathsep + os.environ["PATH"], PASEO_AGENT_ID="parent")
-    out = subprocess.run(ME + ["--subagents"], capture_output=True, text=True, env=env).stdout
-    rows = {l.split()[0]: l.split()[-2:] for l in out.splitlines()[1:] if l.strip()}
-    check(rows.get("kid10000") == ["1", "no"] and rows.get("kid20000") == ["0", "yes"]
-          and rows.get("kid30000") == ["0", "no"],
-          "--subagents counts each subagent's live runs; only idle with none armed is fully idle", out)
-    shutil.rmtree(run_dir, ignore_errors=True)
-    shutil.rmtree(stub, ignore_errors=True)
-
     try:
         ast.parse(open(os.path.abspath(__file__)).read(), feature_version=(3, 8))
         ok("parses under the oldest python3 a Mac may ship (3.8)")
@@ -1053,35 +1025,10 @@ def selftest():
     return 0
 
 
-def subagents():
-    """The calling agent's live subagents. FULLY IDLE means idle in Paseo with no pacemaker run of
-    its own live: nothing it is waiting on will ever wake it again."""
-    me = os.environ.get("PASEO_AGENT_ID")
-    if not me:
-        sys.exit("pacemaker: --subagents lists $PASEO_AGENT_ID's subagents -- run it inside a Paseo agent")
-    p = subprocess.run(["paseo", "ls", "-g", "--label", f"paseo.parent-agent-id={me}", "--json"],
-                       capture_output=True, text=True)
-    if p.returncode:
-        sys.exit(f"pacemaker: paseo ls failed: {(p.stderr or p.stdout).strip()}")
-    kids = json.loads(p.stdout)
-    if not kids:
-        print(f"no live subagents of {me[:8]}")
-        return
-    armed = collections.Counter(m.get("agent") for _, _, state, m in runs() if state == "RUNNING")
-    print(f"{'ID':<9} {'TITLE':<40} {'STATUS':<8} {'PACEMAKERS':>10}  FULLY IDLE")
-    for k in kids:
-        st = "working" if k["status"] in ("running", "initializing") else k["status"]
-        n = armed[k["id"]]
-        print(f"{k['id'][:8]:<9} {k['name'][:40]:<40} {st:<8} {n:>10}  "
-              f"{'yes' if st != 'working' and n == 0 else 'no'}")
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--list", action="store_true", help="show every run on this machine and its state")
-    ap.add_argument("--subagents", action="store_true",
-                    help="your Paseo subagents: working or idle, pacemaker runs armed, and whether fully idle")
     ap.add_argument("--selftest", action="store_true",
                     help="run the behavioural checks against this copy")
     ap.add_argument("--slug",
@@ -1097,9 +1044,6 @@ def main():
         sys.exit(selftest())
     if a.list:
         listing()
-        return
-    if a.subagents:
-        subagents()
         return
     if not a.slug:
         ap.error("--slug is required (or use --list)")
