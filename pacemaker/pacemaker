@@ -24,6 +24,7 @@ macOS. A shell poll loop also costs ~14,400 forks an hour.
 import argparse, collections, json, os, re, shlex, shutil, signal, sys, time
 
 HOME = os.path.expanduser("~/.pacemaker")
+AGENT = os.environ.get("PASEO_AGENT_ID")   # whose run this is; irreproachable reads it to tell waiting from idle
 
 EVERY_DEFAULT = 75        # Minh's number
 EVERY_MAX     = 300       # Minh's number
@@ -166,7 +167,7 @@ class Run:
             shutil.rmtree(staging, ignore_errors=True)
             os.makedirs(staging)
             with open(os.path.join(staging, "meta"), "w") as f:
-                json.dump({"pid": os.getpid(), "started": time.time(), "cmd": cmd}, f)
+                json.dump({"pid": os.getpid(), "started": time.time(), "cmd": cmd, "agent": AGENT}, f)
             # Pre-create the three files and hold descriptors to them BEFORE the directory
             # is visible under its real name. The job's `>` redirections truncate these
             # same inodes, and a descriptor follows the inode through any later rename --
@@ -256,7 +257,7 @@ class Run:
 
         # started comes from claim(), not now: elapsed must count from when the slug was
         # taken, not from whenever the fork happened to finish.
-        self.write_meta({"pid": pid, "started": started, "cmd": cmd})
+        self.write_meta({"pid": pid, "started": started, "cmd": cmd, "agent": AGENT})
         return pid
 
     def kill(self, pid):
