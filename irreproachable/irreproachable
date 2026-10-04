@@ -47,7 +47,7 @@ and say so. Do not clear it to escape the work.
 IDLE_WHY     = "you have been idle {quiet} with no live pacemaker run"
 WAITING_WHY  = ("you have been idle {quiet}; a pacemaker run of yours is live but has not pinged you, so re-arm its "
                 "Monitor with --attach if it expired")
-STEER_HEADER = "[Automated Steer -- do not ignore]"
+STEER_HEADER = '[Automated Steer -- Give clear response discussing the following OUTSIDE OF THINKING TRACE starting with "# Taking Stock and Reporting progress"]'
 DEFAULT_CONF = """# irreproachable defaults -- used by `irreproachable new` for every goal registered after an edit.
 # Flags on `new` (--steer-every, --idle-after, --steer-prompt) override them for one goal. A running goal
 # keeps the values it started with. `irreproachable reset-defaults` restores this file.
@@ -56,8 +56,8 @@ DEFAULT_CONF = """# irreproachable defaults -- used by `irreproachable new` for 
 #   goal prompt  re-sends the goal once the agent has sat idle for idle_after. 1m gives you time to
 #                interrupt it, type and rethink without it being prompted every time it stops. While
 #                one of the agent's pacemaker runs is live, the wait is 6m instead.
-#   steer        every steer_every, interrupting the agent if it is busy: "[Automated Steer -- do not
-#                ignore]" followed by steer_text, with {goal} replaced by the goal.
+#   steer        every steer_every, interrupting the agent if it is busy: the "[Automated Steer -- ...]"
+#                header followed by steer_text, with {goal} replaced by the goal.
 #
 # Durations are a number and s, m or h: 30s, 1m, 2h. steer_text continues on lines indented by four
 # spaces; a blank line between them keeps a paragraph break.
