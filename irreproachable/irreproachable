@@ -23,12 +23,12 @@ because the agent harness kills process trees when a tool call ends.
 State lives in ~/.irreproachable/<agent-id>/. `meta.json` is written once, by the watcher.
 `log` holds `<epoch> <event>` lines; an `END <reason>` line records how a goal ended.
 """
-import argparse, configparser, datetime, filecmp, glob, json, os, re, select, shutil, signal, subprocess, sys, tempfile, time, uuid
+import argparse, configparser, datetime, filecmp, json, os, re, select, shutil, signal, subprocess, sys, tempfile, time, urllib.request, uuid
 
 HOME          = os.path.expanduser("~/.irreproachable")
 WAITING_IDLE  = 360   # while one of the agent's pacemaker runs is live: pacemaker EVERY_MAX 300s (Minh's)
                       # + 60s; its pings wake the agent, so this much silence means nobody is watching it
-PACEMAKER     = os.path.expanduser("~/.pacemaker")
+USAGE_URL     = "https://api.anthropic.com/api/oauth/usage"   # what Claude Code's /usage reads
 START_TIMEOUT = 5     # ~300x the measured 16 ms watcher startup
 SLACK         = 5     # inspect + send wall time, 1.1 s each measured, x2 headroom
 MUTE_MAX      = 3600  # Minh's number: a mute is at most 1h, and that is also the default
@@ -151,23 +151,50 @@ def log_path(aid):  return os.path.join(gdir(aid), "log")
 def muted_path(aid): return os.path.join(gdir(aid), "muted")
 
 
-def pacemaker_live(aid):
-    """Is one of this agent's pacemaker runs live? pacemaker records $PASEO_AGENT_ID in each run's meta. Live
-    means what `pacemaker --list` calls RUNNING: no exit code written yet, and its pid alive."""
-    for meta in glob.glob(os.path.join(PACEMAKER, "*", "meta")):
-        try:
-            m = json.load(open(meta))
-            with open(os.path.join(os.path.dirname(meta), "exit")) as f:
-                done = f.read().strip()
-        except (OSError, ValueError):
-            continue                    # a run being created or archived: pacemaker skips it too
-        if m.get("agent") == aid and not done:
-            try:
-                os.kill(m["pid"], 0)
-                return True
-            except OSError:
-                pass
-    return False
+def watched(aid):
+    """Is one of the agent's pacemaker runs being watched -- a job with its reporter alive, or a live bare
+    reminder? pacemaker owns that definition; a job whose Monitor expired is UNWATCHED and does not count."""
+    out = subprocess.run(["pacemaker", "--list", "--json"], capture_output=True, text=True, check=True).stdout
+    return any(r["agent"] == aid and r["state"] in ("RUNNING", "REMINDER") for r in json.loads(out))
+
+
+class UsageError(Exception):
+    pass
+
+
+def claude_token():
+    """The OAuth token Claude Code itself signed in with: the keychain on macOS, its credentials file elsewhere."""
+    if sys.platform == "darwin":
+        raw = subprocess.run(["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
+                             capture_output=True, text=True, check=True).stdout
+    else:
+        raw = open(os.path.expanduser("~/.claude/.credentials.json")).read()
+    return json.loads(raw)["claudeAiOauth"]["accessToken"]
+
+
+def usage_hold():
+    """None while Claude usage is left; else (until, why): the earliest reset among the exhausted windows (until
+    is None when no reset time is given). IRREPROACHABLE_USAGE_CMD replaces the fetch -- the selftest's stub,
+    since real usage cannot be exhausted on demand."""
+    try:
+        cmd = os.environ.get("IRREPROACHABLE_USAGE_CMD")
+        if cmd:
+            raw = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True).stdout
+        else:
+            req = urllib.request.Request(USAGE_URL, headers={"Authorization": f"Bearer {claude_token()}",
+                                                             "anthropic-beta": "oauth-2025-04-20"})
+            raw = urllib.request.urlopen(req, timeout=30).read()   # measured 0.15-0.22 s; a hung call must not stall us
+        windows = {k: w for k, w in json.loads(raw).items()
+                   if isinstance(w, dict) and isinstance(w.get("utilization"), (int, float))}
+        if not windows:
+            raise ValueError("no usage windows in the response")
+    except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as e:
+        raise UsageError(f"{type(e).__name__}: {e}")
+    out = [(k, w) for k, w in windows.items() if w["utilization"] >= 100 or w.get("locked_reason")]
+    if not out:
+        return None
+    resets = [datetime.datetime.fromisoformat(w["resets_at"]).timestamp() for _, w in out if w.get("resets_at")]
+    return (min(resets) if resets else None), "+".join(k for k, _ in out)
 
 
 def muted_until(aid, token):
@@ -257,6 +284,10 @@ def find_goal(aid):
 def state(aid, m):
     if not alive(aid, m):
         return f"ENDED {ended(aid, m['token']) or 'watcher died'}"
+    marks = [e for _, e in log_lines(aid) if e.startswith((f"HELD {m['token']} ", f"RESUMED {m['token']}"))]
+    if marks and marks[-1].startswith("HELD"):
+        until = marks[-1].split()[2][len("until="):]
+        return f"watching (held, no Claude usage until {time.strftime('%H:%M', time.localtime(int(until)))})"
     left = muted_until(aid, m["token"]) - time.time()
     return f"watching (muted {fmt(left)})" if left > 0 else "watching"
 
@@ -359,7 +390,7 @@ def watch(cfg):
                      "idle_after": cfg["idle_after"], "steer_every": cfg["steer_every"],
                      "steer_text": cfg["steer_text"], "started": time.time()})
     log(aid, f"START {tok}")
-    last_sent, next_steer = 0.0, time.time() + cfg["steer_every"]
+    last_sent, next_steer, held = 0.0, time.time() + cfg["steer_every"], False
 
     def mine():
         m = read_meta(aid)
@@ -393,7 +424,7 @@ def watch(cfg):
         idle = not pending and info["Status"] not in BUSY
         if pending:
             next_steer = max(next_steer, now + cfg["steer_every"])   # time waiting on Minh doesn't count
-        waiting = pacemaker_live(aid)
+        waiting = watched(aid)
         idle_after = WAITING_IDLE if waiting else cfg["idle_after"]
         quiet = now - max(updated_at(info), last_sent)
         # A busy (or permission-blocked) agent has not ended its turn, so its quiet clock restarts no
@@ -403,16 +434,36 @@ def watch(cfg):
         goal_due = idle and now >= due
         # A steer due within idle_after goes out instead of the goal prompt (it carries the goal), so we
         # never interrupt a goal prompt we just sent.
-        if now >= next_steer or (goal_due and next_steer - now < idle_after):
-            if not send("steer", steer_text(cfg), quiet):
-                return
-            next_steer, due = time.time() + cfg["steer_every"], time.time() + idle_after
-        elif goal_due:
-            if not send("goal", GOAL_PROMPT.format(why=(WAITING_WHY if waiting else IDLE_WHY).format(quiet=fmt(quiet)), goal=cfg["goal"]), quiet):
-                return
-            due = time.time() + idle_after
-        # While waiting, re-check every idle_after so a run that just ended is noticed within it.
-        wake = min(due, next_steer, now + cfg["idle_after"]) if waiting else min(due, next_steer)
+        send_steer = now >= next_steer or (goal_due and next_steer - now < idle_after)
+        hold = None
+        if send_steer or goal_due:
+            # No Claude usage left: hold the send (both kinds), sleep to the reset, then send once -- the clocks
+            # are untouched, so nothing missed is replayed. An unreadable usage check holds too, loudly.
+            try:
+                hold = usage_hold()
+            except UsageError as e:
+                hold = (None, f"USAGE-CHECK-FAILED {e}")
+            if hold:
+                hold = (hold[0] or now + cfg["idle_after"], hold[1])
+                if not held:
+                    log(aid, f"HELD {tok} until={int(hold[0])} {hold[1]}")
+            elif held:
+                log(aid, f"RESUMED {tok}")
+            held = bool(hold)
+        if hold:
+            wake = hold[0]
+        else:
+            if send_steer:
+                if not send("steer", steer_text(cfg), quiet):
+                    return
+                next_steer, due = time.time() + cfg["steer_every"], time.time() + idle_after
+            elif goal_due:
+                if not send("goal", GOAL_PROMPT.format(why=(WAITING_WHY if waiting else IDLE_WHY).format(quiet=fmt(quiet)),
+                                                       goal=cfg["goal"]), quiet):
+                    return
+                due = time.time() + idle_after
+            # While waiting, re-check every idle_after so a run that just ended is noticed within it.
+            wake = min(due, next_steer, now + cfg["idle_after"]) if waiting else min(due, next_steer)
         # Agent activity only moves `due` later; only a mute change moves it earlier, and its poke ends the wait.
         if select.select([wake_r], [], [], max(1, wake - time.time()))[0]:
             os.read(wake_r, 512)                   # poked: re-read the mute and recompute
@@ -494,7 +545,7 @@ def cmd_ls(a):
 
 # --------------------------------------------------------------------------------------------- selftest
 
-SECTIONS = ("args", "goal", "steer-a", "steer-b", "steer-c", "edges", "mute", "waiting")
+SECTIONS = ("args", "goal", "steer-a", "steer-b", "steer-c", "edges", "mute", "waiting", "usage")
 
 
 def selftest(only):
@@ -503,6 +554,13 @@ def selftest(only):
     os.environ.pop("PASEO_AGENT_ID", None)     # the suite runs inside Minh's agent; never govern it
     DEFS = os.path.join(tempfile.mkdtemp(prefix="irr-"), "defaults.conf")
     os.environ["IRREPROACHABLE_DEFAULTS"] = DEFS    # Minh's edited defaults never change what is tested
+    USAGE = os.path.join(os.path.dirname(DEFS), "usage.json")    # real usage cannot be exhausted on demand
+    iso = lambda t: datetime.datetime.fromtimestamp(t, datetime.timezone.utc).isoformat()
+    def usage_is(utilization, resets_at=None):
+        with open(USAGE, "w") as f:
+            json.dump({"five_hour": {"utilization": utilization, "resets_at": resets_at and iso(resets_at)}}, f)
+    usage_is(1)
+    os.environ["IRREPROACHABLE_USAGE_CMD"] = f"cat {USAGE}"
     SELF = os.path.abspath(__file__)
     inst = shutil.which("irreproachable")
     if not (inst and filecmp.cmp(inst, SELF, shallow=False)):
@@ -918,33 +976,69 @@ def selftest(only):
             run("clear", "--agent", aid)
             drop(aid)
         if want("waiting"):
-            print("### a live pacemaker run of the agent means waiting, not idle", flush=True)
+            print("### a watched pacemaker run of the agent means waiting; an unwatched one does not", flush=True)
             aid = spawn_agent("waiting", "Reply to every prompt with one word, then end your turn.")
             wait_for(lambda: paseo("inspect", aid)["Status"] == "idle", 120, 2)
-            # A live run as pacemaker records one: this agent's id, its pid alive, no exit code yet.
-            job = subprocess.Popen(["sleep", "900"])
-            run_dir = os.path.join(PACEMAKER, f"zzirr-waiting-{os.getpid()}")
-            os.makedirs(run_dir)
+            slug = f"zzirr-waiting-{os.getpid()}"
+            reporter = subprocess.Popen(["pacemaker", "--slug", slug, "--every", "300", "--", "sleep", "900"],
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+                                        env=dict(os.environ, PASEO_AGENT_ID=aid))
+            run_dir = os.path.expanduser(f"~/.pacemaker/{slug}")
             try:
-                with open(os.path.join(run_dir, "meta"), "w") as f:
-                    json.dump({"pid": job.pid, "started": time.time(), "cmd": ["sleep"], "agent": aid}, f)
-                open(os.path.join(run_dir, "exit"), "w").close()
+                wait_for(lambda: os.path.exists(os.path.join(run_dir, "reporter")), 10, 0.5)
                 run("new", "reply with one word; never run any command", "--agent", aid,
                     "--idle-after", "30s", "--steer-every", "1h")
                 tok = note(read_meta(aid)).get("token")
                 time.sleep(30 + SLACK + 25)
-                check("an idle agent with a live pacemaker run gets no 30s goal prompt", sent(aid, tok, "goal") == [],
+                check("an idle agent with a watched pacemaker run gets no 30s goal prompt", sent(aid, tok, "goal") == [],
                       sent(aid, tok, "goal"))
-                job.kill()
-                job.wait()
+                reporter.kill()             # what a Monitor expiring does: the job lives on, nobody watches it
+                reporter.wait()
                 t_k = time.time()
                 wait_for(lambda: sent(aid, tok, "goal"), 30 + SLACK + 30, 2)
                 g = sent(aid, tok, "goal")
-                check("once the run ends, the goal prompt follows within idle_after",
+                check("once its Monitor is gone the run no longer holds the prompt: it follows within idle_after",
                       bool(g) and g[0] - t_k <= 30 + SLACK, [round(x - t_k) for x in g])
             finally:
-                job.kill()
+                reporter.kill()
+                try:
+                    os.killpg(json.load(open(os.path.join(run_dir, "meta")))["pid"], signal.SIGKILL)
+                except (OSError, ValueError, KeyError):
+                    pass
                 shutil.rmtree(run_dir, ignore_errors=True)
+            run("clear", "--agent", aid)
+            drop(aid)
+
+        if want("usage"):
+            print("### no Claude usage left holds every send until the reset, then sends once", flush=True)
+            aid = spawn_agent("usage", "Reply to every prompt with one word, then end your turn.")
+            wait_for(lambda: paseo("inspect", aid)["Status"] == "idle", 120, 2)
+            reset = time.time() + 75
+            usage_is(100, reset)
+            run("new", "reply with one word; never run any command", "--agent", aid,
+                "--idle-after", "30s", "--steer-every", "1h")
+            tok = note(read_meta(aid)).get("token")
+            wait_for(lambda: any(e.startswith(f"HELD {tok} ") for _, e in log_lines(aid)), 30 + SLACK + 15, 2)
+            row = next((l for l in run("ls").stdout.splitlines() if l.startswith(aid[:8])), "")
+            check("ls shows the goal held for want of usage", "held" in row, row)
+            time.sleep(max(0, reset - 8 - time.time()))
+            usage_is(1)                     # usage is back by the time the watcher wakes at the reset
+            check("nothing was sent while usage was out", sent(aid, tok, "goal") == [], sent(aid, tok, "goal"))
+            wait_for(lambda: sent(aid, tok, "goal"), 8 + SLACK + 20, 1)
+            g = sent(aid, tok, "goal")
+            check("at the reset the goal prompt goes out once", len(g) == 1 and reset - 1 <= g[0] <= reset + SLACK,
+                  [round(x - reset) for x in g])
+            check("the hold and its end are logged", any(e.startswith(f"RESUMED {tok}") for _, e in log_lines(aid)),
+                  log_lines(aid)[-4:])
+            wait_for(lambda: paseo("inspect", aid)["Status"] == "idle", 60, 2)
+            with open(USAGE, "w") as f:     # an unreadable usage check must hold, not send
+                f.write("not json")
+            n = len(sent(aid, tok, "goal"))
+            time.sleep(30 + SLACK + 25)
+            check("an unreadable usage check holds the send and says so",
+                  len(sent(aid, tok, "goal")) == n
+                  and any("USAGE-CHECK-FAILED" in e for _, e in log_lines(aid)), log_lines(aid)[-3:])
+            usage_is(1)
             run("clear", "--agent", aid)
             drop(aid)
     finally:

@@ -74,6 +74,14 @@ class Run:
         self.meta = os.path.join(self.dir, "meta")
 
     def exists(self):    return os.path.isdir(self.dir)
+
+    def mark_reporter(self):
+        """Record this process as the run's reporter. A live job whose reporter is gone is
+        UNWATCHED: its Monitor expired and nobody re-attached, so its output reaches no one."""
+        tmp = os.path.join(self.dir, f"reporter.tmp.{os.getpid()}")
+        with open(tmp, "w") as f:
+            f.write(str(os.getpid()))
+        os.replace(tmp, os.path.join(self.dir, "reporter"))
     def read_meta(self): return json.load(open(self.meta))
 
     def fd(self, name):
@@ -312,35 +320,61 @@ def prune():
             total -= size
 
 
-def listing():
+REMINDERS = os.path.join(HOME, ".reminders")
+
+
+def rows():
+    """Every run and live reminder on this machine: (started, slug, state, agent, cmd).
+    state is RUNNING (job alive, a reporter watching it), UNWATCHED (job alive, nobody
+    watching), REMINDER (a bare reminder, alive), exit N, or died."""
+    out = []
+    if os.path.isdir(HOME):
+        for name in sorted(os.listdir(HOME)):
+            d = os.path.join(HOME, name)
+            if not os.path.isdir(d) or name.startswith("."):   # .staging-* is mid-claim
+                continue
+            try:
+                m = json.load(open(os.path.join(d, "meta")))
+                started = float(m["started"])
+            except (OSError, ValueError, KeyError, TypeError):
+                continue    # no meta, or a half-written one: skip the row, not the listing
+            pid  = m.get("pid")
+            code = Run(name).exit_code()
+            if code is not None:
+                state = f"exit {code}"
+            elif isinstance(pid, int) and Run.alive(pid):
+                try:
+                    rep_pid = int(open(os.path.join(d, "reporter")).read())
+                except (OSError, ValueError):
+                    rep_pid = 0
+                state = "RUNNING" if rep_pid and Run.alive(rep_pid) else "UNWATCHED"
+            else:
+                state = "died"
+            out.append((started, name, state, m.get("agent"), str(m.get("cmd", ""))))
+    if os.path.isdir(REMINDERS):
+        for f in sorted(os.listdir(REMINDERS)):
+            try:
+                r = json.load(open(os.path.join(REMINDERS, f)))
+            except (OSError, ValueError):
+                continue
+            if Run.alive(r["pid"]):     # a reminder whose pacemaker died is simply gone
+                out.append((r["started"], f[:-len(".json")], "REMINDER", r.get("agent"), ""))
+    return sorted(out)
+
+
+def listing(as_json):
     """Finished runs are only reachable by --attach while they still hold the live slot;
     once the slug is reused the old one is archived under its start time. Without a listing
     they are invisible."""
-    if not os.path.isdir(HOME):
+    rs = rows()
+    if as_json:
+        print(json.dumps([{"slug": n, "state": st, "agent": ag, "started": t, "cmd": c}
+                          for t, n, st, ag, c in rs]))
         return
-    rows = []
-    for name in sorted(os.listdir(HOME)):
-        d = os.path.join(HOME, name)
-        if not os.path.isdir(d) or name.startswith("."):   # .staging-* is mid-claim
-            continue
-        try:
-            m = json.load(open(os.path.join(d, "meta")))
-            started = float(m["started"])
-        except (OSError, ValueError, KeyError, TypeError):
-            continue        # no meta, or a half-written one: skip the row, not the listing
-        pid  = m.get("pid")
-        code = Run(name).exit_code()
-        if code is not None:
-            state = f"exit {code}"
-        elif isinstance(pid, int) and Run.alive(pid):
-            state = "RUNNING"
-        else:
-            state = "died"
-        rows.append((started, name, state, str(m.get("cmd", ""))))
-    if not rows:
+    if not rs:
         print("no runs under " + short(HOME))
         return
-    for started, name, state, cmd in sorted(rows):
+    for started, name, state, _, cmd in rs:
         print(f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(started))}  "
               f"{state:<9} {name:<24} {cmd[:60]}")
     print(f"\nlogs: {short(HOME)}/<name>/stdout and /stderr")
@@ -482,6 +516,7 @@ def finish(run, started, code, so, se, paths=False):
 def watch(run, every, timeout, attaching):
     if attaching:
         run.open_files()      # a run we did not start: take hold of its inodes now
+    run.mark_reporter()
     try:
         m = run.read_meta()
         pid, started, cmd = int(m["pid"]), float(m["started"]), str(m.get("cmd", ""))
@@ -595,12 +630,28 @@ def watch(run, every, timeout, attaching):
 
 
 def remind(slug, every, timeout):
-    """No pid, no logs, nothing to lose -- so nothing to detach and nothing to resume.
+    """No job, no logs, nothing to lose -- so nothing to detach and nothing to resume. Its only
+    state is a marker in .reminders while it is alive, so --list can show who is waiting on it.
 
-    Deliberately stateless. The elapsed figure is therefore since THIS arming, not since
+    The rest is stateless. The elapsed figure is therefore since THIS arming, not since
     the thing you are waiting on began, and it says so: Monitor expires at 30 minutes, so
     a re-armed reminder would otherwise quietly restart its clock and understate the wait."""
     start = time.time()
+    os.makedirs(REMINDERS, exist_ok=True)
+    mark = os.path.join(REMINDERS, f"{slug}.json")
+    with open(mark, "w") as f:      # so --list, and whoever asks whether an agent is waiting, sees it
+        json.dump({"pid": os.getpid(), "started": start, "agent": AGENT}, f)
+    try:
+        _remind(slug, every, timeout, start)
+    finally:
+        try:
+            if json.load(open(mark))["pid"] == os.getpid():
+                os.remove(mark)
+        except (OSError, ValueError):
+            pass
+
+
+def _remind(slug, every, timeout, start):
     while True:
         time.sleep(every)
         now = time.time()
@@ -1011,6 +1062,40 @@ def selftest():
                 bad.append(f"{os.path.basename(f)}:{i}: {s[:70]}")
     check(not bad, "no GNU-only constructs in the shipped files", "; ".join(bad))
 
+    # Watched vs unwatched: a job is RUNNING only while a reporter is watching it. Kill the
+    # reporter (what a Monitor expiring does) and the detached job lives on, UNWATCHED.
+    def state_of(slug):
+        rows = json.loads(subprocess.run(ME + ["--list", "--json"], capture_output=True, text=True).stdout)
+        return next(((r["state"], r["agent"]) for r in rows if r["slug"] == slug), (None, None))
+    slug = S + "watched"
+    clean(slug)
+    rep = subprocess.Popen(ME + ["--slug", slug, "--every", "300", "--", "sleep", "120"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+                           env=dict(os.environ, PASEO_AGENT_ID="agent-w"))
+    t0 = time.time()
+    while state_of(slug)[0] != "RUNNING" and time.time() - t0 < 10:
+        time.sleep(0.2)
+    check(state_of(slug) == ("RUNNING", "agent-w"), "a job with its reporter alive is RUNNING, recorded under its agent",
+          state_of(slug))
+    rep.kill(); rep.wait()
+    check(state_of(slug)[0] == "UNWATCHED", "kill the reporter and the still-running job shows UNWATCHED",
+          state_of(slug))
+    kill_job(slug); clean(slug)
+    slug = S + "reminder"
+    rem = subprocess.Popen(ME + ["--slug", slug, "--every", "300"], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, start_new_session=True, env=dict(os.environ, PASEO_AGENT_ID="agent-r"))
+    t0 = time.time()
+    while state_of(slug)[0] is None and time.time() - t0 < 10:
+        time.sleep(0.2)
+    check(state_of(slug) == ("REMINDER", "agent-r"), "a live bare reminder is listed as REMINDER under its agent",
+          state_of(slug))
+    rem.kill(); rem.wait()
+    check(state_of(slug)[0] is None, "a dead bare reminder is no longer listed", state_of(slug))
+    try:
+        os.remove(os.path.join(REMINDERS, slug + ".json"))
+    except OSError:
+        pass
+
     try:
         ast.parse(open(os.path.abspath(__file__)).read(), feature_version=(3, 8))
         ok("parses under the oldest python3 a Mac may ship (3.8)")
@@ -1029,6 +1114,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--list", action="store_true", help="show every run on this machine and its state")
+    ap.add_argument("--json", action="store_true", help="with --list: machine-readable, one object per run")
     ap.add_argument("--selftest", action="store_true",
                     help="run the behavioural checks against this copy")
     ap.add_argument("--slug",
@@ -1043,7 +1129,7 @@ def main():
     if a.selftest:
         sys.exit(selftest())
     if a.list:
-        listing()
+        listing(a.json)
         return
     if not a.slug:
         ap.error("--slug is required (or use --list)")
