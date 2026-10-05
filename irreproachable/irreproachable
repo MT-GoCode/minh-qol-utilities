@@ -388,7 +388,7 @@ def watch(cfg):
     assert started, "ps -o lstart= failed"     # a null lstart would make a dead watcher look alive
     write_meta(aid, {"pid": me, "lstart": started, "token": tok, "goal": cfg["goal"],
                      "idle_after": cfg["idle_after"], "steer_every": cfg["steer_every"],
-                     "steer_text": cfg["steer_text"], "started": time.time()})
+                     "steer_text": cfg["steer_text"], "watch_usage": cfg["watch_usage"], "started": time.time()})
     log(aid, f"START {tok}")
     last_sent, next_steer, held = 0.0, time.time() + cfg["steer_every"], False
 
@@ -436,7 +436,7 @@ def watch(cfg):
         # never interrupt a goal prompt we just sent.
         send_steer = now >= next_steer or (goal_due and next_steer - now < idle_after)
         hold = None
-        if send_steer or goal_due:
+        if cfg["watch_usage"] and (send_steer or goal_due):
             # No Claude usage left: hold the send (both kinds), sleep to the reset, then send once -- the clocks
             # are untouched, so nothing missed is replayed. An unreadable usage check holds too, loudly.
             try:
@@ -492,7 +492,8 @@ def cmd_new(a):
             pass
     token = uuid.uuid4().hex
     spawn({"aid": aid, "token": token, "goal": a.goal, "idle_after": idle_after,
-           "steer_every": steer_every, "steer_text": a.steer_prompt or d["steer_text"]})
+           "steer_every": steer_every, "steer_text": a.steer_prompt or d["steer_text"],
+           "watch_usage": a.watch_claude_usage})
     deadline = time.time() + START_TIMEOUT
     while time.time() < deadline:
         m = read_meta(aid)
@@ -1013,10 +1014,18 @@ def selftest(only):
             print("### no Claude usage left holds every send until the reset, then sends once", flush=True)
             aid = spawn_agent("usage", "Reply to every prompt with one word, then end your turn.")
             wait_for(lambda: paseo("inspect", aid)["Status"] == "idle", 120, 2)
+            usage_is(100, time.time() + 3600)
+            run("new", "reply with one word; never run any command", "--agent", aid,
+                "--idle-after", "30s", "--steer-every", "1h")
+            tok = note(read_meta(aid)).get("token")
+            wait_for(lambda: sent(aid, tok, "goal"), 30 + SLACK + 30, 2)
+            check("without --watch-claude-usage, no usage left holds nothing", bool(sent(aid, tok, "goal"))
+                  and not any(e.startswith(("HELD", "USAGE")) for _, e in log_lines(aid)), log_lines(aid)[-3:])
+            wait_for(lambda: paseo("inspect", aid)["Status"] == "idle", 60, 2)
             reset = time.time() + 75
             usage_is(100, reset)
             run("new", "reply with one word; never run any command", "--agent", aid,
-                "--idle-after", "30s", "--steer-every", "1h")
+                "--idle-after", "30s", "--steer-every", "1h", "--watch-claude-usage")
             tok = note(read_meta(aid)).get("token")
             wait_for(lambda: any(e.startswith(f"HELD {tok} ") for _, e in log_lines(aid)), 30 + SLACK + 15, 2)
             row = next((l for l in run("ls").stdout.splitlines() if l.startswith(aid[:8])), "")
@@ -1070,7 +1079,8 @@ A detached watcher sends the agent two kinds of message:
 The agent runs `irreproachable clear` when the goal is met.
 
 Usage
-  irreproachable new "<goal>" [--steer-every DUR] [--idle-after DUR] [--steer-prompt TEXT] [--agent ID]
+  irreproachable new "<goal>" [--steer-every DUR] [--idle-after DUR] [--steer-prompt TEXT]
+                     [--watch-claude-usage] [--agent ID]
   irreproachable clear [--agent ID]          end the goal
   irreproachable mute [DUR] [--agent ID]     hold goal prompts, at most and by default 1h; steers continue
   irreproachable unmute [--agent ID]         end a mute early
@@ -1114,6 +1124,8 @@ def main():
     p.add_argument("--idle-after", type=dur, help="idle time before the goal prompt (default: the defaults file)")
     p.add_argument("--steer-every", type=dur, help="steer cadence; interrupts if busy (default: the defaults file)")
     p.add_argument("--steer-prompt", help="steer text for this goal; {goal} is replaced by the goal")
+    p.add_argument("--watch-claude-usage", action="store_true",
+                   help="hold every send while this machine's Claude login has no usage left; send once it resets")
     p.add_argument("--agent", help="agent id (default: $PASEO_AGENT_ID)")
     p = sub.add_parser("clear", help="end an agent's goal")
     p.add_argument("--agent", help="agent id or prefix (default: $PASEO_AGENT_ID)")

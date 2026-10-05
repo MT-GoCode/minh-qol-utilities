@@ -3,7 +3,7 @@
 Keep a Paseo agent working toward a goal until the agent says it is met.
 
 ```
-irreproachable new "<goal>" [--steer-every DUR] [--idle-after DUR] [--steer-prompt TEXT] [--agent ID]
+irreproachable new "<goal>" [--steer-every DUR] [--idle-after DUR] [--steer-prompt TEXT] [--watch-claude-usage] [--agent ID]
 irreproachable clear [--agent ID]
 irreproachable mute [DURATION] [--agent ID]
 irreproachable unmute [--agent ID]
@@ -28,6 +28,13 @@ agent from a plain shell. A detached watcher then sends two kinds of message:
 Nothing is sent while the agent has a pending permission request: it is waiting on you. `mute [DURATION]` holds
 goal prompts only (steers keep their cadence) for up to 1h, the default; `unmute` ends it early. The agent ends the goal
 with `irreproachable clear`. `ls` shows every goal as `watching`, `watching (muted 12m)` or `ENDED <why>`.
+
+## Claude usage
+
+`--watch-claude-usage` holds every send while this machine's Claude login has no usage left (the same
+windows Claude Code's `/usage` shows), sleeps to the earliest reset, then sends once. Without it irreproachable
+never touches Claude credentials. A usage check that cannot be read holds too, logged as `USAGE-CHECK-FAILED`.
+`ls` shows a held goal.
 
 ## Defaults
 
