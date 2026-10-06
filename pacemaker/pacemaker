@@ -27,7 +27,7 @@ HOME = os.path.expanduser("~/.pacemaker")
 AGENT = os.environ.get("PASEO_AGENT_ID")   # whose run this is; irreproachable reads it to tell waiting from idle
 
 EVERY_DEFAULT = 75        # Minh's number
-EVERY_MAX     = 840       # Minh's number: 14m keeps a turn inside Claude Code's 1h subscriber cache TTL
+EVERY_MAX     = 1200      # Minh's number: 20m keeps a turn inside Claude Code's 1h subscriber cache TTL
 # Monitor's own ceiling (timeout_ms 1800000, set by doctrine). The env var exists only for --selftest.
 MONITOR_LIFE  = int(os.environ.get("PACEMAKER_MONITOR_LIFE", 1800))
 QUIET_START   = 60        # below this a job is a pass-through, so say nothing at all
@@ -962,7 +962,7 @@ def selftest():
     # reminder, hang, get killed by the harness, and return a negative code -- which read
     # as "rejected". Assert that it said why, and that it exited on its own.
     for args, want, msg in (
-        (("--slug", "x", "--every", "841"),    "--every must be",   "--every above 840 rejected"),
+        (("--slug", "x", "--every", "1201"),   "--every must be",   "--every above 1200 rejected"),
         (("--slug", "x", "--timeout", "1801"), "--timeout must be", "--timeout above 1800 rejected"),
         (("--every", "60"),                    "--slug is required", "--slug is required"),
         (("--slug", "a/b"),                    "--slug must be",    "a path-like slug is rejected"),

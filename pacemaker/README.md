@@ -14,7 +14,7 @@ Monitor(pacemaker --slug build --attach)           resume after Monitor expires
 | flag | default | |
 | :- | :- | :- |
 | `--slug` | required | names the run. You choose it, so you can always `--attach` |
-| `--every` | `75` | seconds between pings, max 840 (14m) |
+| `--every` | `75` | seconds between pings, max 1200 (20m) |
 | `--timeout` | none | kill the job after this many seconds, max 1800 |
 | `--attach` | | resume watching a run that is already going |
 | `--list` | | every run on this machine, its state and its command |

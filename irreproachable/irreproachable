@@ -26,7 +26,7 @@ State lives in ~/.irreproachable/<agent-id>/. `meta.json` is written once, by th
 import argparse, configparser, datetime, filecmp, json, os, re, select, shutil, signal, subprocess, sys, tempfile, time, urllib.request, uuid
 
 HOME          = os.path.expanduser("~/.irreproachable")
-WAITING_IDLE  = 900   # while one of the agent's pacemaker runs is live: pacemaker EVERY_MAX 840s (Minh's)
+WAITING_IDLE  = 1260  # while one of the agent's pacemaker runs is live: pacemaker EVERY_MAX 1200s (Minh's)
                       # + 60s; its pings wake the agent, so this much silence means nobody is watching it
 USAGE_URL     = "https://api.anthropic.com/api/oauth/usage"   # what Claude Code's /usage reads
 START_TIMEOUT = 5     # ~300x the measured 16 ms watcher startup
@@ -55,7 +55,7 @@ DEFAULT_CONF = """# irreproachable defaults -- used by `irreproachable new` for 
 # A goal's watcher sends the agent two kinds of message:
 #   goal prompt  re-sends the goal once the agent has sat idle for idle_after. 1m gives you time to
 #                interrupt it, type and rethink without it being prompted every time it stops. While
-#                one of the agent's pacemaker runs is live, the wait is 15m instead.
+#                one of the agent's pacemaker runs is live, the wait is 21m instead.
 #   steer        every steer_every, interrupting the agent if it is busy: the header
 #                "[Discuss the below ...]" followed by steer_text, with {goal} replaced by the goal.
 #
