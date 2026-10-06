@@ -18,7 +18,7 @@ agent from a plain shell. A detached watcher then sends two kinds of message:
 
 - **Goal prompt** (`GOAL_PROMPT` in the script) is sent once the agent has sat idle for `--idle-after`, default
   1m (room to type after you interrupt it). While one of the agent's pacemaker runs is live (pacemaker records
-  `$PASEO_AGENT_ID`), the window is 6m instead: pacemaker pings at least every 300s, so 6m of silence means
+  `$PASEO_AGENT_ID`), the window is 15m instead: pacemaker pings at least every 840s, so 15m of silence means
   nobody is watching the run. It is only sent to an agent that is not busy.
 - **Steer** (`STEER_HEADER`, `STEER_BODY`, `RESUME`) is sent every `--steer-every`, default 30m. It **interrupts
   a busy agent on purpose**, because Paseo has no message queue. The appended resume line tells the agent to redo

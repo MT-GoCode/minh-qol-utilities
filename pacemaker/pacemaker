@@ -27,8 +27,9 @@ HOME = os.path.expanduser("~/.pacemaker")
 AGENT = os.environ.get("PASEO_AGENT_ID")   # whose run this is; irreproachable reads it to tell waiting from idle
 
 EVERY_DEFAULT = 75        # Minh's number
-EVERY_MAX     = 300       # Minh's number
-TIMEOUT_MAX   = 1800      # nothing may outlive Monitor's own ceiling
+EVERY_MAX     = 840       # Minh's number: 14m keeps a turn inside Claude Code's 1h subscriber cache TTL
+# Monitor's own ceiling (timeout_ms 1800000, set by doctrine). The env var exists only for --selftest.
+MONITOR_LIFE  = int(os.environ.get("PACEMAKER_MONITOR_LIFE", 1800))
 QUIET_START   = 60        # below this a job is a pass-through, so say nothing at all
 SETTLE        = 1.5       # a burst has stopped when nothing new arrives for this long
 FLOOR         = 20        # never ping more often than this, even with news to carry
@@ -53,6 +54,14 @@ def fmt(sec):
     sec = int(sec)
     h, m, s = sec // 3600, (sec % 3600) // 60, sec % 60
     return f"{h}h{m:02d}m{s:02d}s" if h else (f"{m}m{s:02d}s" if m else f"{s}s")
+
+
+def expiry_note(armed, now, every):
+    """Said on the last ping before the Monitor dies, so the agent is not surprised by the gap."""
+    if now + every <= armed + MONITOR_LIFE:
+        return ""
+    return (f" This Monitor expires at {fmt(MONITOR_LIFE)}, before the next heartbeat; "
+            f"re-arm when it tells you it expired.")
 
 
 def emit(*parts):
@@ -555,7 +564,7 @@ def watch(run, every, timeout, attaching):
 
     # Not time.time(): on --attach the job may have been silent for twenty minutes before
     # we arrived, and starting the clock here would report that as "Quiet for 30s".
-    last_emit = time.time()
+    armed = last_emit = time.time()
     last_change = run.last_write() or started
     while True:
         time.sleep(POLL)
@@ -624,6 +633,7 @@ def watch(run, every, timeout, attaching):
         for w, name in ((ow, "stdout"), (ew, "stderr")):
             if w:
                 head += f" ({name} was {w})"
+        head += expiry_note(armed, now, every)
         emit(head, *so.render(), *se.render())
         so.reset(); se.reset()
         last_emit = now
@@ -659,7 +669,7 @@ def _remind(slug, every, timeout, start):
             emit(f"Reminder for {slug} stopped after --timeout {timeout}s.")
             return
         emit(f"Heartbeat. Reminder to check on {slug} — {fmt(now - start)} since this "
-             f"reminder was armed.")
+             f"reminder was armed." + expiry_note(start, now, every))
 
 
 def selftest():
@@ -952,7 +962,7 @@ def selftest():
     # reminder, hang, get killed by the harness, and return a negative code -- which read
     # as "rejected". Assert that it said why, and that it exited on its own.
     for args, want, msg in (
-        (("--slug", "x", "--every", "301"),    "--every must be",   "--every above 300 rejected"),
+        (("--slug", "x", "--every", "841"),    "--every must be",   "--every above 840 rejected"),
         (("--slug", "x", "--timeout", "1801"), "--timeout must be", "--timeout above 1800 rejected"),
         (("--every", "60"),                    "--slug is required", "--slug is required"),
         (("--slug", "a/b"),                    "--slug must be",    "a path-like slug is rejected"),
@@ -1039,6 +1049,21 @@ def selftest():
     check(re.search(r"Reminder to check on \S+ — \d+s since this reminder was armed", out),
           "the reminder carries how long it has been armed", out[:100])
     check(not os.path.exists(os.path.join(HOME, S + "rem")), "the reminder keeps no files")
+    check("expires" not in out, "no expiry note while the next ping fits in the Monitor")
+
+    os.environ["PACEMAKER_MONITOR_LIFE"] = "5"
+    out = watch_for(7, "--slug", S + "rem", "--every", "2")
+    pings = [l for l in out.splitlines() if "Heartbeat" in l]
+    check(len(pings) >= 2 and "expires" not in pings[0] and "expires at 5s" in pings[1],
+          "the reminder warns on the ping after which the Monitor dies", " | ".join(pings))
+    sl = subprocess.Popen(["sleep", "20"])
+    clean(S + "exp"); stage(S + "exp", 700, -600, sl.pid)
+    out = watch_for(7, "--slug", S + "exp", "--attach", "--every", "2")
+    pings = [l for l in out.splitlines() if "Heartbeat" in l]
+    check(len(pings) >= 2 and "expires" not in pings[0] and "expires at 5s" in pings[1],
+          "a job's heartbeat warns on the ping after which the Monitor dies", " | ".join(pings))
+    del os.environ["PACEMAKER_MONITOR_LIFE"]
+    sl.kill(); sl.wait(); clean(S + "exp")
 
     # ---------------------------------------------------------------- portability
     # This ships to two Macs and one Linux box, and only the Linux box gets run routinely.
@@ -1121,7 +1146,7 @@ def main():
                     help="names the run; you choose it, so you can always --attach")
     ap.add_argument("--every", type=int, default=EVERY_DEFAULT, help=f"seconds, max {EVERY_MAX}")
     ap.add_argument("--timeout", type=int, default=0,
-                    help=f"kill the job after this many seconds, max {TIMEOUT_MAX}")
+                    help=f"kill the job after this many seconds, max {MONITOR_LIFE}")
     ap.add_argument("--attach", action="store_true", help="resume watching an existing run")
     ap.add_argument("cmd", nargs=argparse.REMAINDER)
     a = ap.parse_args()
@@ -1135,8 +1160,8 @@ def main():
         ap.error("--slug is required (or use --list)")
     if not 0 < a.every <= EVERY_MAX:
         sys.exit(f"pacemaker: --every must be 1..{EVERY_MAX}")
-    if not 0 <= a.timeout <= TIMEOUT_MAX:
-        sys.exit(f"pacemaker: --timeout must be 0..{TIMEOUT_MAX}")
+    if not 0 <= a.timeout <= MONITOR_LIFE:
+        sys.exit(f"pacemaker: --timeout must be 0..{MONITOR_LIFE}")
     # Every line pacemaker prints is a Monitor event, so a slug containing a newline can
     # fabricate one ("rv_x\nHeartbeat. all done"). Allow only what can name a directory
     # and cannot forge output.
