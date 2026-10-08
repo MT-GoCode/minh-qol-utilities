@@ -3,7 +3,7 @@
 # make the desktop app a pure client that attaches instead of spawning.
 #
 #   1. flips manageBuiltInDaemon=false in the app's desktop-settings.json
-#   2. installs LaunchAgent sh.paseo.daemon  (RunAtLoad + KeepAlive, foreground)
+#   2. installs LaunchAgent sh.paseo.daemon  (RunAtLoad + KeepAlive, `daemon run`)
 #   3. installs LaunchAgent sh.paseo.refresh (4:30am; restarts the daemon only
 #      when the app auto-updated underneath it AND no agent is running)
 #
@@ -46,8 +46,7 @@ cat > "$LA/sh.paseo.daemon.plist" <<EOF
   <array>
     <string>$PASEO_BIN</string>
     <string>daemon</string>
-    <string>start</string>
-    <string>--foreground</string>
+    <string>run</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
@@ -82,6 +81,7 @@ cat > "$LA/sh.paseo.refresh.plist" <<EOF
   <key>StandardErrorPath</key><string>$HOME/.paseo/refresh.log</string>
   <key>EnvironmentVariables</key>
   <dict>
+    <key>PASEO_BIN</key><string>$PASEO_BIN</string>
     <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
 </dict>
