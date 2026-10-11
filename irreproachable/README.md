@@ -14,7 +14,8 @@ irreproachable --selftest [SECTION ...]
 ```
 
 Run `new` inside a Paseo agent, and it governs that agent through `$PASEO_AGENT_ID`. `--agent` targets another
-agent from a plain shell. A detached watcher then sends two kinds of message:
+agent from a plain shell. An agent has at most one goal, so editing a goal is running `new` again: it replaces
+the old one. A detached watcher then sends two kinds of message:
 
 - **Goal prompt** (`GOAL_PROMPT` in the script) is sent once the agent has sat idle for `--idle-after`, default
   1m (room to type after you interrupt it). While one of the agent's pacemaker runs is live (pacemaker records
