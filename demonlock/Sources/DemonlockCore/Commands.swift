@@ -238,39 +238,45 @@ func runSnooze(_ spec: String) {
 
 // MARK: - arm / disarm (sudo)
 
+/// The HARD preconditions for denying sudo. Denying with no configured, satisfiable way back bricks a
+/// machine whose Recovery is locked and whose password is unknown. This runs on EVERY deny path — the
+/// non-root pre-check, the root re-exec, and `nosudo` — so a direct `sudo demonlock arm` cannot bypass
+/// it. Every entry is a hard fail with no override: a check you can wave through isn't a check. The
+/// valve-configured fact is read from the (world-readable) config file, authoritative and un-stale; the
+/// policy facts come from the daemon's published snapshot. [brick review #1]
+func sudoRecoveryBlockers(_ snap: StateSnapshot?) -> [String] {
+    var b: [String] = []
+    if !ReleaseValveConfig.load().isComplete {
+        b.append("the release valve isn't configured — you'd have NO delay-gated way back to sudo. "
+                 + "Fix: `sudo demonlock admin-release-valve set-gate-policy \"IN_POLICY\"`, then "
+                 + "`set-delay \"<dur>\"`, then `set-max-request-duration \"<dur>\"`")
+    }
+    if snap?.policyString.isEmpty ?? true {
+        b.append("no policy is set — the release-valve gate (IN_POLICY) could never open. "
+                 + "Fix: `sudo demonlock setpolicy '…'`")
+    }
+    // A policy SET but currently evaluating BLOCK (out of policy, or unknown → fail-closed) locks you
+    // out the instant you arm; with an IN_POLICY gate the valve could then never open either.
+    if snap?.verdict == "block" {
+        b.append("the policy currently evaluates BLOCK (\(snap?.reason ?? "no reason")) — a gate-policy "
+                 + "using IN_POLICY could never open. Fix: get into policy first; confirm `demonlock "
+                 + "status` shows verdict ALLOW")
+    }
+    return b
+}
+
 func runArm() {
     // arm TIGHTENS enforcement, so it's allowed WITHOUT admin via a passwordless sudoers grant. The
     // grant targets the go-w, root-owned BUNDLE binary (not the /usr/local/bin wrapper, whose dir could
     // be user-writable → arbitrary root) [review H4]. Run as you → re-exec through `sudo -n`.
     if geteuid() != 0 {
-        // Readiness gate — runs here in the USER context, before the arg-exact passwordless re-exec.
+        // Readiness gate in the USER context, before the arg-exact passwordless re-exec. AgentPerms is
+        // arm-only (enforcement readiness); the recovery blockers are shared with the root path below.
         let snap = StateStore.read()
-        // Every check here is a HARD FAIL, and there is no override. arm revokes your admin, so arming
-        // with any of these broken leaves you armed AND without the admin needed to repair it — exactly
-        // the trap a "warn and continue" gate springs. A check you can wave through isn't a check.
-        var blockers = AgentPerms.from(snap?.health).warnings
-        if snap?.releaseValve?.configured != true {
-            blockers.append("the release valve isn't configured — you'd have NO delay-gated way back to sudo. "
-                            + "Fix: `sudo demonlock admin-release-valve set-gate-policy \"IN_POLICY\"`, then "
-                            + "`set-delay \"<dur>\"`, then `set-max-request-duration \"<dur>\"`")
-        }
-        if snap?.policyString.isEmpty ?? true {
-            blockers.append("no policy is set — you'd be BLOCKED the moment you arm. Fix: `sudo demonlock setpolicy '…'`")
-        }
-        // Same reasoning as "no policy", one step further: a policy that is SET but currently
-        // evaluating BLOCK (out of policy, or unknown → fail-closed) locks you out the instant you
-        // arm. And if the release-valve gate-policy contains IN_POLICY — the shape the README
-        // recommends — the valve can never open either, because opening it requires the very policy
-        // that is false. Stale zones or an unpinned BSSID on a NEW machine land here by default.
-        if snap?.verdict == "block" {
-            blockers.append("the policy currently evaluates BLOCK (\(snap?.reason ?? "no reason")) — you'd be "
-                            + "locked out the moment you arm, and a gate-policy using IN_POLICY could never "
-                            + "open. Fix: get into policy, or `sudo demonlock setpolicy '…'` — confirm "
-                            + "`demonlock status` shows verdict ALLOW first")
-        }
+        var blockers = AgentPerms.from(snap?.health).warnings + sudoRecoveryBlockers(snap)
         if !blockers.isEmpty {
             fail("""
-            ✗ refusing to arm — fix these first (arm revokes your admin, so afterwards you couldn't):
+            ✗ refusing to arm — fix these first (arm denies your sudo, so afterwards you couldn't):
               • \(blockers.joined(separator: "\n              • "))
             """)
         }
@@ -278,28 +284,30 @@ func runArm() {
         if rc != 0 { fail("✗ couldn't arm without admin — the passwordless grant may be missing (reinstall), or run `sudo demonlock arm`.") }
         exit(0)
     }
+    // Root path — re-check the recovery preconditions HERE so a direct `sudo demonlock arm` (which skips
+    // the non-root pre-check) can never deny sudo with no way back. [brick review #1]
+    let rootBlockers = sudoRecoveryBlockers(StateStore.read())
+    if !rootBlockers.isEmpty {
+        fail("✗ refusing to arm — no safe way back to sudo afterward:\n              • "
+             + rootBlockers.joined(separator: "\n              • "))
+    }
+    // No resolvable enforced user ⇒ the deny can't name anyone ⇒ nothing would enforce. Refuse rather
+    // than print a success that denies nothing. [brick review #5]
+    guard let user = Settings.load().enforcedUserName() else {
+        fail("✗ refusing to arm — can't resolve the enforced user, so sudo can't be denied. Reinstall or set the enforced user.")
+    }
     do { try ArmStore.set(true) } catch { fail("✗ couldn't arm: \(error)") }
     var note = ""
-    if SnoozeStore.until() != nil {            // arming means enforcement is truly live NOW
-        try? SnoozeStore.set(nil)
-        note = "  (cleared the active snooze)"
-    }
-    // arm is the panic button: it must ALSO close the release valve (cancel a pending request AND revoke
-    // a live grant) + deny sudo now, else a request would hand out sudo minutes after you armed, and
-    // status would lie. Running as root here, so do it inline. [review M2]
-    let user = Settings.load().enforcedUserName()   // login name (resolves a numeric-uid enforcedUser)
+    if SnoozeStore.until() != nil { try? SnoozeStore.set(nil); note = "  (cleared the active snooze)" }
+    // arm is the panic button: it ALSO closes the release valve (cancel a pending request AND revoke a
+    // live grant) and denies sudo now, else a request could hand out sudo minutes after you armed. [M2]
     ReleaseValve.hardReset(username: user)
-    var denyFailed = false
-    if let u = user {
-        denyFailed = !Admin.revoke(u)
-        note += denyFailed ? "  (closed the release valve)" : "  (denied sudo + closed the release valve)"
+    guard Admin.revoke(user) else {
+        fail("✗ ARMED but COULD NOT DENY SUDO — \(Admin.policyPath) did not land; sudo still works. Run `sudo demonlock arm` again.")
     }
-    print("✓ ARMED\(note) — after a \(Int(Settings.load().countdownSeconds))s countdown out of policy the enforcer force-closes your GUI apps (sshd/tmux survive).")
+    print("✓ ARMED\(note)  (denied sudo + closed the release valve) — after a \(Int(Settings.load().countdownSeconds))s countdown out of policy the enforcer force-closes your GUI apps (sshd/tmux survive).")
     // `sudo demonlock disarm` is unreachable once the deny lands — sudo is exactly what it refuses.
     print("  the way back to sudo is the release valve: `demonlock admin-release-valve request \"<dur>\"`")
-    if denyFailed {
-        print("✗ COULD NOT DENY SUDO — \(Admin.policyPath) did not land. Enforcement is live but sudo still works.")
-    }
 }
 
 /// nosudo (no sudo): deny sudo now. arm re-execs through the passwordless sudoers grant, so this does
@@ -310,10 +318,18 @@ func runNoSudo() {
         if rc != 0 { fail("✗ couldn't deny sudo without a password — the passwordless grant may be missing (reinstall), or run `sudo demonlock nosudo`.") }
         exit(0)
     }
-    let user = Settings.load().enforcedUserName()
+    // Same recovery preconditions as arm: denying sudo with no configured way back is a brick, and
+    // `nosudo` is otherwise an unchecked, passwordless deny. [brick review #1]
+    let blockers = sudoRecoveryBlockers(StateStore.read())
+    if !blockers.isEmpty {
+        fail("✗ refusing to deny sudo — no safe way back:\n              • "
+             + blockers.joined(separator: "\n              • "))
+    }
+    guard let user = Settings.load().enforcedUserName() else {
+        fail("✗ can't resolve the enforced user, so sudo can't be denied. Reinstall or set the enforced user.")
+    }
     ReleaseValve.hardReset(username: user)
-    let denied = user.map { Admin.revoke($0) } ?? false
-    guard denied else {
+    guard Admin.revoke(user) else {
         fail("✗ COULD NOT DENY SUDO — \(Admin.policyPath) did not land. Sudo still works.")
     }
     print("✓ sudo denied — release valve closed too. Back in via `demonlock admin-release-valve request \"<dur>\"`.")
@@ -322,10 +338,16 @@ func runNoSudo() {
 func runDisarm() {
     requireRoot("disarm")
     do { try ArmStore.set(false) } catch { fail("✗ couldn't disarm: \(error)") }
-    // Disarming must leave no deny behind: it is the only verb that can, and a stale one would refuse
-    // the sudo needed to run it again.
-    if let u = Settings.load().enforcedUserName(), !Admin.allowSudo(u) {
-        fail("✗ DISARMED, but \(Admin.policyPath) could not be rewritten — sudo stays denied. Delete it by hand.")
+    // Restore sudo. The valve stands down on its own next tick now that armed=false (so a lingering
+    // grant can't re-deny), but disarm itself must leave sudo ALLOWED — a stale deny would refuse the
+    // very sudo needed to run disarm again. If the user can't be resolved, fall back to removing the
+    // policy file so %admin governs rather than leaving a deny in place.
+    if let u = Settings.load().enforcedUserName() {
+        if !Admin.allowSudo(u) {
+            fail("✗ DISARMED, but \(Admin.policyPath) could not be rewritten — sudo stays denied. Delete it by hand.")
+        }
+    } else if !Admin.unmanageSudo() {
+        fail("✗ DISARMED, but \(Admin.policyPath) could not be removed — sudo stays denied. Delete it by hand.")
     }
     print("✓ DISARMED — everything keeps running and the countdown still shows, but nothing gets killed.")
 }

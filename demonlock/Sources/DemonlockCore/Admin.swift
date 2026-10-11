@@ -73,7 +73,11 @@ enum Admin {
     /// only the root enforcer can call this meaningfully; the unprivileged CLI/GUI render the value the
     /// enforcer publishes into the state snapshot instead of reading the file themselves.
     static func sudoState(path: String = policyPath) -> SudoState {
-        guard let s = try? String(contentsOfFile: path, encoding: .utf8) else { return .unmanaged }
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: path) else { return .unmanaged }
+        // Exists but unreadable: fail toward DENIED, never toward allowed/unmanaged — status must not
+        // give false reassurance that sudo is available when the enforcing file is present.
+        guard let s = try? String(contentsOfFile: path, encoding: .utf8) else { return .denied }
         return s.contains("!ALL") ? .denied : .allowed
     }
 
@@ -91,12 +95,37 @@ enum Admin {
     @discardableResult
     static func allowSudo(_ user: String) -> Bool { writePolicy(allowBody(user)) }
 
+    /// Remove demonlock's opinion entirely, handing sudo back to macOS's `%admin` rule. The disarm
+    /// fallback when the enforced user can't be resolved: removing the file can't brick (no username,
+    /// no visudo, no write), and %admin restores sudo for an admin user.
+    @discardableResult
+    static func unmanageSudo() -> Bool {
+        let fm = FileManager.default
+        try? fm.removeItem(atPath: stagingPath)
+        guard fm.fileExists(atPath: policyPath) else { return true }
+        return (try? fm.removeItem(atPath: policyPath)) != nil
+    }
+
+    /// Cross-process lock serializing the whole create→validate→rename below. Dotted + outside
+    /// sudoers.d, so it is never parsed as sudoers. A process that dies holding it releases it on fd
+    /// close, so it cannot wedge.
+    private static let lockPath = Paths.supportDir + "/.sudoers-write.lock"
+
     /// Publish a sudoers policy atomically. `visudo -cf` gates the publish because a syntax error
     /// anywhere under the include directive disables sudo entirely, which on a machine with no known
     /// account password is unrecoverable. `rename(2)` cannot be observed partially, so sudo sees either
     /// the whole previous policy or the whole new one — never a mixture, and never nothing.
+    ///
+    /// The flock serializes the two writers that exist — the root daemon (valve grant/expiry) and a
+    /// root CLI verb (arm/nosudo/disarm). Without it they share the staging path and can each rename
+    /// the other's file into place, so a command prints success while the file holds the opposite
+    /// policy. With it, each writer owns the staging file for the whole critical section.
     private static func writePolicy(_ body: String) -> Bool {
         let fm = FileManager.default
+        let lock = open(lockPath, O_CREAT | O_RDWR, 0o600)
+        if lock >= 0 { flock(lock, LOCK_EX) }
+        defer { if lock >= 0 { flock(lock, LOCK_UN); close(lock) } }
+
         try? fm.removeItem(atPath: stagingPath)
         guard fm.createFile(atPath: stagingPath, contents: Data((body + "\n").utf8),
                             attributes: [.posixPermissions: 0o440,
