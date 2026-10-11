@@ -432,7 +432,8 @@ final class Enforcer {
             snoozePresetInvoke: spInvokeStatus,
             snoozePresetAdds: spAddsStatus,
             lockboxUnlocks: lockboxUnlocksStatus,
-            lockbox: lockboxStatus))
+            lockbox: lockboxStatus,
+            sudoPolicy: Admin.sudoState().rawValue))
     }
 
     /// Queue factories — one per delayed surface.

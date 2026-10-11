@@ -67,10 +67,11 @@ func statusBody(_ s: StateSnapshot) -> String {
     L.append("demonlock" + (age > 5 ? "  ⚠️  state is \(Int(age))s stale — enforcer may be stuck" : ""))
     L.append("  enforced user : \(s.enforcedUser.isEmpty ? "(unset)" : s.enforcedUser)")
     L.append("  armed         : \(s.armed ? "ARMED" : "DISARMED")")
-    let sudoLine = switch Admin.sudoState() {
+    let sudoLine = switch s.sudoPolicy.flatMap(Admin.SudoState.init(rawValue:)) {
         case .denied:    "DENIED (sudoers)"
         case .allowed:   "ALLOWED, passwordless (sudoers)"
         case .unmanaged: "ALLOWED — %admin governs, demonlock has no opinion yet"
+        case nil:        "unknown — enforcer has not published yet"
     }
     L.append("  sudo          : " + sudoLine)
     L.append("  phase         : \(s.phase.uppercased())")

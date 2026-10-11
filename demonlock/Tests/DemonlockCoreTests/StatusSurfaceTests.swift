@@ -22,6 +22,28 @@ final class StatusSurfaceTests: XCTestCase {
         XCTAssertNil(snap.safeApps)
     }
 
+    /// Regression: the sudo line once read the sudoers file directly from `statusBody`. That file is
+    /// 0440 root:wheel, so the unprivileged CLI and GUI panel always failed the read and rendered
+    /// "no policy" — reporting sudo as AVAILABLE on a machine where it was denied. The renderer must
+    /// take the root enforcer's published value and nothing else.
+    func testSudoLineComesFromTheSnapshotNotTheFilesystem() {
+        func render(_ policy: String?) -> String {
+            var snap = StateSnapshot(
+                updatedEpoch: nowEpoch(), lastCheckEpoch: nowEpoch(), armed: true, snoozeUntilEpoch: nil,
+                enforcedUser: "minh", phase: "monitoring", verdict: "allow", reason: "r",
+                countdownDeadlineEpoch: nil, countdownSeconds: 10, pollSeconds: 1,
+                policyString: "p", tree: nil, insideZones: [], sshAddr: nil,
+                health: Health(), releaseValve: nil)
+            snap.sudoPolicy = policy
+            return statusBody(snap)
+        }
+        XCTAssertTrue(render("denied").contains("DENIED"))
+        XCTAssertFalse(render("denied").contains("ALLOWED"))
+        XCTAssertTrue(render("allowed").contains("passwordless"))
+        XCTAssertTrue(render(nil).contains("unknown"))
+        XCTAssertFalse(render(nil).contains("DENIED"))
+    }
+
     func testPrintQueueStatusRendersRowsAbortAndLastLanded() {
         let q = DelayQueue.QStatus(
             kind: "zones",

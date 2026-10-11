@@ -60,6 +60,10 @@ struct StateSnapshot: Codable {
 
     var lockbox: Lockbox.Status? = nil              // window/lock state (names only, no secrets) — kept
 
+    /// demonlock's sudoers policy, read by the ROOT enforcer: the file is 0440 root:wheel, so the
+    /// unprivileged CLI and GUI cannot read it themselves and would misreport a deny as "no policy".
+    var sudoPolicy: String? = nil
+
     init(updatedEpoch: Double, lastCheckEpoch: Double, armed: Bool, snoozeUntilEpoch: Double?,
          enforcedUser: String, phase: String, verdict: String?, reason: String,
          countdownDeadlineEpoch: Double?, countdownSeconds: Double, pollSeconds: Double,
@@ -68,7 +72,8 @@ struct StateSnapshot: Codable {
          delayedPolicy: DelayQueue.QStatus? = nil, delayedZones: DelayQueue.QStatus? = nil,
          delayedGatePolicy: DelayQueue.QStatus? = nil, safeApps: DelayQueue.QStatus? = nil,
          snoozePresetInvoke: DelayQueue.QStatus? = nil, snoozePresetAdds: DelayQueue.QStatus? = nil,
-         lockboxUnlocks: DelayQueue.QStatus? = nil, lockbox: Lockbox.Status? = nil) {
+         lockboxUnlocks: DelayQueue.QStatus? = nil, lockbox: Lockbox.Status? = nil,
+         sudoPolicy: String? = nil) {
         self.updatedEpoch = updatedEpoch; self.lastCheckEpoch = lastCheckEpoch; self.armed = armed
         self.snoozeUntilEpoch = snoozeUntilEpoch; self.enforcedUser = enforcedUser; self.phase = phase
         self.verdict = verdict; self.reason = reason; self.countdownDeadlineEpoch = countdownDeadlineEpoch
@@ -79,6 +84,7 @@ struct StateSnapshot: Codable {
         self.delayedGatePolicy = delayedGatePolicy; self.safeApps = safeApps
         self.snoozePresetInvoke = snoozePresetInvoke; self.snoozePresetAdds = snoozePresetAdds
         self.lockboxUnlocks = lockboxUnlocks; self.lockbox = lockbox
+        self.sudoPolicy = sudoPolicy
     }
 
     /// LENIENT decode for every status field: synthesized Codable THROWS on a type mismatch even
@@ -112,6 +118,7 @@ struct StateSnapshot: Codable {
         snoozePresetAdds = try? c.decode(DelayQueue.QStatus.self, forKey: .snoozePresetAdds)
         lockboxUnlocks = try? c.decode(DelayQueue.QStatus.self, forKey: .lockboxUnlocks)
         lockbox = try? c.decode(Lockbox.Status.self, forKey: .lockbox)
+        sudoPolicy = try? c.decode(String.self, forKey: .sudoPolicy)
     }
 }
 
