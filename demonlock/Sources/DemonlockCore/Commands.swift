@@ -273,7 +273,7 @@ func runArm() {
         // Readiness gate in the USER context, before the arg-exact passwordless re-exec. AgentPerms is
         // arm-only (enforcement readiness); the recovery blockers are shared with the root path below.
         let snap = StateStore.read()
-        var blockers = AgentPerms.from(snap?.health).warnings + sudoRecoveryBlockers(snap)
+        let blockers = AgentPerms.from(snap?.health).warnings + sudoRecoveryBlockers(snap)
         if !blockers.isEmpty {
             fail("""
             ✗ refusing to arm — fix these first (arm denies your sudo, so afterwards you couldn't):
@@ -337,19 +337,18 @@ func runNoSudo() {
 
 func runDisarm() {
     requireRoot("disarm")
-    do { try ArmStore.set(false) } catch { fail("✗ couldn't disarm: \(error)") }
-    // Restore sudo. The valve stands down on its own next tick now that armed=false (so a lingering
-    // grant can't re-deny), but disarm itself must leave sudo ALLOWED — a stale deny would refuse the
-    // very sudo needed to run disarm again. If the user can't be resolved, fall back to removing the
-    // policy file so %admin governs rather than leaving a deny in place.
-    if let u = Settings.load().enforcedUserName() {
-        if !Admin.allowSudo(u) {
-            fail("✗ DISARMED, but \(Admin.policyPath) could not be rewritten — sudo stays denied. Delete it by hand.")
-        }
-    } else if !Admin.unmanageSudo() {
-        fail("✗ DISARMED, but \(Admin.policyPath) could not be removed — sudo stays denied. Delete it by hand.")
+    // Order is load-bearing. Close the valve FIRST: a grant still live at disarm would otherwise expire
+    // later and write the DENY onto a disarmed machine. Then restore sudo. Clear the armed flag LAST, so
+    // if restoring sudo fails you are left armed-and-denied — the normal armed state, which the release
+    // valve can still get you out of — never disarmed-and-denied, which nothing would ever undo.
+    let user = Settings.load().enforcedUserName()
+    ReleaseValve.hardReset(username: user)
+    let restored = user.map { Admin.allowSudo($0) } ?? Admin.unmanageSudo()
+    guard restored else {
+        fail("✗ NOT disarmed — couldn't restore sudo (\(Admin.policyPath) didn't land). Still armed; the way back is `demonlock admin-release-valve request \"<dur>\"`.")
     }
-    print("✓ DISARMED — everything keeps running and the countdown still shows, but nothing gets killed.")
+    do { try ArmStore.set(false) } catch { fail("✗ sudo restored, but couldn't clear the armed flag: \(error)") }
+    print("✓ DISARMED — sudo restored. Everything keeps running and the countdown still shows, but nothing gets killed.")
 }
 
 // MARK: - password-lockbox

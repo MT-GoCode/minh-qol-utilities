@@ -74,102 +74,67 @@ enum ReleaseValve {
     /// Drive the valve one tick: consume markers, evaluate the gate (IN_POLICY = `mainResult`), advance
     /// the lifecycle, run Admin grant/revoke, return the status to publish. `username` is the account to
     /// grant/revoke; `enforcedUID` owner-checks the user markers.
-    /// The valve's lifecycle action, separated from its effect so it is exhaustively testable without
-    /// root or real files. DISARMED with any non-idle state ⇒ stand down (clear, no sudo change) — this
-    /// is the fix for a grant lingering past a disarm and re-denying at expiry. ARMED: a granted request
-    /// at/after its expiry ⇒ expire; a pending request at/after eligibility with the gate open ⇒ grant;
-    /// otherwise nothing.
-    enum ValveAction: Equatable { case none, standDown, expire, grant }
-
-    static func decide(armed: Bool, state st: ReleaseValveState, nowSec: Double, gateOpen: Bool) -> ValveAction {
-        guard armed else { return st.isIdle ? .none : .standDown }
-        if st.isGranted { return nowSec >= (st.grantExpiresAt ?? 0) ? .expire : .none }
-        if !st.isIdle, nowSec >= (st.eligibleAt ?? .infinity), gateOpen { return .grant }
-        return .none
-    }
-
-    static func tick(now: Date, armed: Bool, mainResult: Tri, baseInputs: PolicyInputs,
+    static func tick(now: Date, mainResult: Tri, baseInputs: PolicyInputs,
                      username: String?, enforcedUID: uid_t?) -> RVStatus {
         let cfg = ReleaseValveConfig.load()
         var st = ReleaseValveState.load()
         let nowSec = now.timeIntervalSince1970
 
-        // Markers and the gate run only while ARMED. When disarmed the valve processes nothing and just
-        // stands down below — demonlock has no opinion when disarmed.
-        var windowTree: EvalNode?
-        var windowTri: Tri = .unknown
-        if armed {
-            // 1. Markers (non-root, user-dropped, MarkerIO-hardened). Abort first, then request.
-            if let euid = enforcedUID {
-                if MarkerIO.consumeFlag(Paths.rvAbortMarker, enforcedUID: euid) {
-                    // abort closes a live grant now. Only clear once the DENY lands, else a failed revoke
-                    // would leave sudo allowed while status reads idle (fails toward allowed).
-                    if st.isGranted, let u = username {
-                        if Admin.revoke(u) { st = ReleaseValveState(); ReleaseValveState.write(st) }
-                        else { logStderr("release-valve: abort requested but DENY write failed — retrying next tick") }
-                    } else {
-                        st = ReleaseValveState(); ReleaseValveState.write(st)
-                    }
-                }
-                if let durText = MarkerIO.consumeLast(Paths.rvRequestMarker, enforcedUID: euid) {
-                    let asked = TimeSpec.parseDuration(durText) ?? 0
-                    let dur = min(max(asked, 0), cfg.effectiveMaxDuration)
-                    if cfg.isComplete, dur > 0 {
-                        if st.isIdle {
-                            st.requestedAt = nowSec
-                            st.eligibleAt = nowSec + cfg.effectiveDelay   // freeze eligibility at request time
-                            st.requestedDurationSec = dur
-                            ReleaseValveState.write(st)
-                            logStderr("release-valve: request accepted (\(Int(dur/60))m grant, eligible in \(Int(cfg.effectiveDelay))s)")
-                        } else if !st.isGranted {
-                            // Idempotent: a repeat request while PENDING only updates the duration; it does
-                            // NOT reset eligibleAt (can't shorten OR extend the delay).
-                            st.requestedDurationSec = dur; ReleaseValveState.write(st)
-                            logStderr("release-valve: pending request duration updated to \(Int(dur/60))m")
-                        }
-                        // granted → ignore (already have admin)
-                    }
-                }
+        // 1. Markers (non-root, user-dropped, MarkerIO-hardened). Abort first, then request.
+        if let euid = enforcedUID {
+            if MarkerIO.consumeFlag(Paths.rvAbortMarker, enforcedUID: euid) {
+                if st.isGranted, let u = username { _ = Admin.revoke(u) }   // abort closes a live grant now
+                st = ReleaseValveState(); ReleaseValveState.write(st)
             }
-            // 2. Evaluate the gate with IN_POLICY = the main verdict.
-            if let wp = cfg.gatePolicy, let policy = try? PolicyEngine.parse(wp) {
-                var inp = baseInputs; inp.inPolicy = mainResult
-                let (r, t) = PolicyEngine.evaluate(policy, inp)
-                windowTri = r; windowTree = t
+            if let durText = MarkerIO.consumeLast(Paths.rvRequestMarker, enforcedUID: euid) {
+                let asked = TimeSpec.parseDuration(durText) ?? 0
+                let dur = min(max(asked, 0), cfg.effectiveMaxDuration)
+                if cfg.isComplete, dur > 0 {
+                    if st.isIdle {
+                        st.requestedAt = nowSec
+                        st.eligibleAt = nowSec + cfg.effectiveDelay   // freeze eligibility at request time
+                        st.requestedDurationSec = dur
+                        ReleaseValveState.write(st)
+                        logStderr("release-valve: request accepted (\(Int(dur/60))m grant, eligible in \(Int(cfg.effectiveDelay))s)")
+                    } else if !st.isGranted {
+                        // Idempotent: a repeat request while PENDING only updates the duration; it does NOT
+                        // reset eligibleAt (can't shorten OR extend the delay).
+                        st.requestedDurationSec = dur; ReleaseValveState.write(st)
+                        logStderr("release-valve: pending request duration updated to \(Int(dur/60))m")
+                    }
+                    // granted → ignore (already have admin)
+                }
             }
         }
 
-        // 3. Decide the lifecycle action from the (now-updated) state, then perform it. Separating the
-        // decision (pure, exhaustively tested) from the effect (root sudoers writes) is what lets the
-        // disarm stand-down and the fail-safe grant/revoke handling be verified without root. [review #1,#2]
-        switch decide(armed: armed, state: st, nowSec: nowSec, gateOpen: windowTri == .t) {
-        case .none:
-            break
-        case .standDown:
-            // Disarmed with a live/pending grant: clear state WITHOUT touching sudo (disarm already set
-            // it to allowed). This is what stops a grant lingering past a disarm and re-denying at expiry.
-            st = ReleaseValveState(); ReleaseValveState.write(st)
-        case .expire:
-            if let u = username {
-                // Only clear once the DENY lands; a failed write keeps the grant live and retries, rather
-                // than reporting idle while sudo is still allowed.
-                if Admin.revoke(u) { st = ReleaseValveState(); ReleaseValveState.write(st) }
-                else { logStderr("release-valve: grant expired but DENY write failed — sudo still allowed, retrying next tick") }
+        // 2. Evaluate the gate with IN_POLICY = the main verdict.
+        var windowTree: EvalNode?
+        var windowTri: Tri = .unknown
+        if let wp = cfg.gatePolicy, let policy = try? PolicyEngine.parse(wp) {
+            var inp = baseInputs; inp.inPolicy = mainResult
+            let (r, t) = PolicyEngine.evaluate(policy, inp)
+            windowTri = r; windowTree = t
+        }
+
+        // 3. Lifecycle: expire a live grant; or grant a pending request once eligible AND gate-true.
+        if st.isGranted {
+            if nowSec >= (st.grantExpiresAt ?? 0), let u = username {
+                _ = Admin.revoke(u)
+                st = ReleaseValveState(); ReleaseValveState.write(st)
             }
-        case .grant:
-            // Re-read immediately before granting: arm/nosudo (hardReset, a separate process) may have
-            // CLOSED the valve since `st` was loaded. Advance ONLY if the ALLOW write lands, else stay
-            // pending and retry — never report granted while sudo is still denied.
-            if let u = username, !ReleaseValveState.load().isIdle {
-                if Admin.grant(u) {
-                    expediteSelfServeQueues()
-                    st.grantedAt = nowSec
-                    st.grantExpiresAt = nowSec + (st.requestedDurationSec ?? 0)
-                    ReleaseValveState.write(st)
-                    logStderr("release-valve: GRANT admin → \(u) for \(Int((st.requestedDurationSec ?? 0)/60))m")
-                } else {
-                    logStderr("release-valve: eligible and gate-open but ALLOW write failed — staying pending, retrying next tick")
-                }
+        } else if !st.isIdle {
+            // Re-read rv-state immediately before granting: `arm`/`nosudo` (hardReset, a separate process)
+            // may have CLOSED the valve since we loaded `st` at the top of the tick. Without this re-check
+            // the grant could land after a reset → admin held while armed (violates M2: arm closes the
+            // valve). Narrows the lock-free window to microseconds; a full flock would close it entirely.
+            if nowSec >= (st.eligibleAt ?? .infinity), windowTri == .t, let u = username,
+               !ReleaseValveState.load().isIdle {
+                _ = Admin.grant(u)
+                expediteSelfServeQueues()
+                st.grantedAt = nowSec
+                st.grantExpiresAt = nowSec + (st.requestedDurationSec ?? 0)
+                ReleaseValveState.write(st)
+                logStderr("release-valve: GRANT admin → \(u) for \(Int((st.requestedDurationSec ?? 0)/60))m")
             }
         }
 
