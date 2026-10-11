@@ -3,8 +3,9 @@ import MacUtilsCore
 
 /// The ADMIN RELEASE VALVE — a self-serve, delay-gated admin grant. You `request "<duration>"` (no
 /// sudo); the daemon stamps the request time itself, waits out `delaySec`, then — the first tick the
-/// GATE POLICY is provably true — grants admin (Admin.grant) for your requested duration, then revokes
-/// (Admin.revoke). No timers: all state on disk, driven by the enforcer tick.
+/// GATE POLICY is provably true — then the valve records the grant and its expiry in its own state.
+/// It does NOT touch sudo or the admin group itself: the enforcer tick is the single owner of the lock
+/// (see Admin.reconcile) and reads this state's phase each tick. No timers: all state on disk.
 ///
 /// Three config fields (root-owned, set via sudo): gatePolicy (WHEN a grant may open — policy syntax +
 /// the IN_POLICY primitive), delaySec (wait after request before eligible — clamped ≥ Bounds floor),
@@ -72,10 +73,10 @@ struct RVStatus: Codable {
 
 enum ReleaseValve {
     /// Drive the valve one tick: consume markers, evaluate the gate (IN_POLICY = `mainResult`), advance
-    /// the lifecycle, run Admin grant/revoke, return the status to publish. `username` is the account to
-    /// grant/revoke; `enforcedUID` owner-checks the user markers.
+    /// the lifecycle, update valve state, return the status to publish. `enforcedUID` owner-checks the
+    /// user markers. The actual lock is applied by the enforcer via Admin.reconcile off this status.
     static func tick(now: Date, mainResult: Tri, baseInputs: PolicyInputs,
-                     username: String?, enforcedUID: uid_t?) -> RVStatus {
+                     enforcedUID: uid_t?) -> RVStatus {
         let cfg = ReleaseValveConfig.load()
         var st = ReleaseValveState.load()
         let nowSec = now.timeIntervalSince1970
@@ -83,7 +84,7 @@ enum ReleaseValve {
         // 1. Markers (non-root, user-dropped, MarkerIO-hardened). Abort first, then request.
         if let euid = enforcedUID {
             if MarkerIO.consumeFlag(Paths.rvAbortMarker, enforcedUID: euid) {
-                if st.isGranted, let u = username { _ = Admin.revoke(u) }   // abort closes a live grant now
+                // abort closes the request; the enforcer re-locks on its next reconcile.
                 st = ReleaseValveState(); ReleaseValveState.write(st)
             }
             if let durText = MarkerIO.consumeLast(Paths.rvRequestMarker, enforcedUID: euid) {
@@ -118,8 +119,9 @@ enum ReleaseValve {
 
         // 3. Lifecycle: expire a live grant; or grant a pending request once eligible AND gate-true.
         if st.isGranted {
-            if nowSec >= (st.grantExpiresAt ?? 0), let u = username {
-                _ = Admin.revoke(u)
+            if nowSec >= (st.grantExpiresAt ?? 0) {
+                // Grant expired: drop to idle. The enforcer's reconcile sees phase != "granted" while
+                // armed and re-locks this same tick.
                 st = ReleaseValveState(); ReleaseValveState.write(st)
             }
         } else if !st.isIdle {
@@ -127,14 +129,15 @@ enum ReleaseValve {
             // may have CLOSED the valve since we loaded `st` at the top of the tick. Without this re-check
             // the grant could land after a reset → admin held while armed (violates M2: arm closes the
             // valve). Narrows the lock-free window to microseconds; a full flock would close it entirely.
-            if nowSec >= (st.eligibleAt ?? .infinity), windowTri == .t, let u = username,
+            if nowSec >= (st.eligibleAt ?? .infinity), windowTri == .t,
                !ReleaseValveState.load().isIdle {
-                _ = Admin.grant(u)
+                // Record the grant; the enforcer's reconcile sees phase == "granted" and UNLOCKS this
+                // same tick. The re-read above guards against arm/nosudo having closed the valve since.
                 expediteSelfServeQueues()
                 st.grantedAt = nowSec
                 st.grantExpiresAt = nowSec + (st.requestedDurationSec ?? 0)
                 ReleaseValveState.write(st)
-                logStderr("release-valve: GRANT admin → \(u) for \(Int((st.requestedDurationSec ?? 0)/60))m")
+                logStderr("release-valve: GRANT (\(Int((st.requestedDurationSec ?? 0)/60))m) — enforcer unlocks this tick")
             }
         }
 
@@ -168,11 +171,10 @@ enum ReleaseValve {
         queues.reduce(0) { $0 + $1.expediteAll(now: now, reason: "admin grant") }
     }
 
-    /// Revoke any live grant and clear all state. Called by `arm` and `nosudo` (both root). Idempotent.
-    /// [review M2 — arm must close the valve, else a pending/granted request hands out admin after arming]
-    static func hardReset(username: String?) {
-        let st = ReleaseValveState.load()
-        if st.isGranted, let u = username { _ = Admin.revoke(u) }
+    /// Clear all valve state (cancel a pending request, drop a live grant to idle). Called by `arm` and
+    /// `nosudo` so a leftover grant can't keep the machine unlocked after arming; the caller then locks
+    /// via Admin.reconcile. Idempotent. [review M2]
+    static func hardReset() {
         ReleaseValveState.write(ReleaseValveState())
     }
 }

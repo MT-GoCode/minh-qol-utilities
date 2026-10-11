@@ -301,11 +301,15 @@ func runArm() {
     if SnoozeStore.until() != nil { try? SnoozeStore.set(nil); note = "  (cleared the active snooze)" }
     // arm is the panic button: it ALSO closes the release valve (cancel a pending request AND revoke a
     // live grant) and denies sudo now, else a request could hand out sudo minutes after you armed. [M2]
-    ReleaseValve.hardReset(username: user)
-    guard Admin.revoke(user) else {
+    ReleaseValve.hardReset()
+    // Lock both doors now: remove from admin + write the sudoers deny. The enforcer re-applies this every
+    // tick, so it holds against an MDM re-adding admin. [returns true once the sudoers deny — the instant
+    // lock — is in place; the admin removal is best-effort and re-won each tick]
+    guard Admin.reconcile(locked: true, user: user) else {
         fail("✗ ARMED but COULD NOT DENY SUDO — \(Admin.policyPath) did not land; sudo still works. Run `sudo demonlock arm` again.")
     }
-    print("✓ ARMED\(note)  (denied sudo + closed the release valve) — after a \(Int(Settings.load().countdownSeconds))s countdown out of policy the enforcer force-closes your GUI apps (sshd/tmux survive).")
+    print("✓ ARMED\(note)  (sudo locked: removed from admin + sudoers deny; valve closed) — after a \(Int(Settings.load().countdownSeconds))s countdown out of policy the enforcer force-closes your GUI apps (sshd/tmux survive).")
+    print("  Recommended to log out and back in to prevent GUI popups still working this session.")
     // `sudo demonlock disarm` is unreachable once the deny lands — sudo is exactly what it refuses.
     print("  the way back to sudo is the release valve: `demonlock admin-release-valve request \"<dur>\"`")
 }
@@ -328,11 +332,15 @@ func runNoSudo() {
     guard let user = Settings.load().enforcedUserName() else {
         fail("✗ can't resolve the enforced user, so sudo can't be denied. Reinstall or set the enforced user.")
     }
-    ReleaseValve.hardReset(username: user)
-    guard Admin.revoke(user) else {
+    ReleaseValve.hardReset()
+    guard Admin.reconcile(locked: true, user: user) else {
         fail("✗ COULD NOT DENY SUDO — \(Admin.policyPath) did not land. Sudo still works.")
     }
-    print("✓ sudo denied — release valve closed too. Back in via `demonlock admin-release-valve request \"<dur>\"`.")
+    // Latch it, so the enforcer tick keeps it locked (the tick reconciles to `armed || nosudo`).
+    do { try NoSudoStore.set(true) } catch { fail("✗ sudo denied, but couldn't persist the nosudo latch: \(error)") }
+    print("✓ sudo locked: removed from admin + sudoers deny; release valve closed.")
+    print("  Recommended to log out and back in to prevent GUI popups still working this session.")
+    print("  Back in via `demonlock admin-release-valve request \"<dur>\"`.")
 }
 
 func runDisarm() {
@@ -342,12 +350,13 @@ func runDisarm() {
     // if restoring sudo fails you are left armed-and-denied — the normal armed state, which the release
     // valve can still get you out of — never disarmed-and-denied, which nothing would ever undo.
     let user = Settings.load().enforcedUserName()
-    ReleaseValve.hardReset(username: user)
-    let restored = user.map { Admin.allowSudo($0) } ?? Admin.unmanageSudo()
+    ReleaseValve.hardReset()
+    let restored = user.map { Admin.reconcile(locked: false, user: $0) } ?? Admin.unmanageSudo()
     guard restored else {
         fail("✗ NOT disarmed — couldn't restore sudo (\(Admin.policyPath) didn't land). Still armed; the way back is `demonlock admin-release-valve request \"<dur>\"`.")
     }
     do { try ArmStore.set(false) } catch { fail("✗ sudo restored, but couldn't clear the armed flag: \(error)") }
+    try? NoSudoStore.set(false)   // clear the nosudo latch too, else the tick re-locks
     print("✓ DISARMED — sudo restored. Everything keeps running and the countdown still shows, but nothing gets killed.")
 }
 

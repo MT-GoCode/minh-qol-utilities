@@ -190,6 +190,19 @@ enum ArmStore {
     }
 }
 
+/// The `nosudo` latch: sudo locked WITHOUT the full arm (no app-killing). Separate from ArmStore because
+/// the enforcer's lock predicate is `armed || nosudo`; without it the tick would reconcile a nosudo lock
+/// straight back to unlocked. Fails OPEN (missing ⇒ not latched) so a disarmed machine stays unlocked.
+enum NoSudoStore {
+    static func active() -> Bool {
+        guard let s = try? String(contentsOfFile: Paths.noSudoFile, encoding: .utf8) else { return false }
+        return s.trimmingCharacters(in: .whitespacesAndNewlines) == "1"
+    }
+    static func set(_ on: Bool) throws {
+        try (on ? "1" : "0").write(toFile: Paths.noSudoFile, atomically: true, encoding: .utf8)
+    }
+}
+
 enum SnoozeStore {
     static func until() -> Date? { EpochFile.read(Paths.snoozeFile) }
     static func set(_ date: Date?, to path: String = Paths.snoozeFile) throws { try EpochFile.write(date, to: path) }

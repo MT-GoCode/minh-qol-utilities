@@ -12,6 +12,7 @@ enum Paths {
     static let zonesFile       = supportDir + "/zones.json"
     static let settingsFile    = supportDir + "/settings.json"
     static let armedFile       = supportDir + "/armed"
+    static let noSudoFile      = supportDir + "/nosudo"   // nosudo latch: locks sudo WITHOUT full arm
     static let snoozeFile      = supportDir + "/snooze"
     static let stateFile       = supportDir + "/state.json"
     static let heldFixFile     = supportDir + "/heldfix.json"

@@ -219,7 +219,20 @@ final class Enforcer {
 
         // Release valve: same inputs + the main verdict feeds IN_POLICY; drives the delay-gated grant.
         let rv = ReleaseValve.tick(now: now, mainResult: result, baseInputs: baseInputs,
-                                   username: userName(for: target), enforcedUID: euid)
+                                   enforcedUID: euid)
+
+        // The lock, applied every tick by its single owner. LOCKED = armed with no active grant: remove
+        // the enforced user from admin AND write the sudoers deny. Unlocked (disarmed or granted): add
+        // back + allow. Idempotent, so a steady tick writes nothing; on a managed Mac this re-shuts the
+        // admin door the MDM reopens, within one tick. Runs before the snooze return — a snooze suspends
+        // app-killing, never the sudo lock.
+        if let lockUser = userName(for: target) {
+            let lock = Admin.shouldLock(armed: armed, noSudo: NoSudoStore.active(), valvePhase: rv.phase)
+            var changed = false
+            _ = Admin.reconcile(locked: lock, user: lockUser, changed: &changed)
+            if changed { log(lock ? "sudo LOCKED (admin removed + sudoers deny) — \(lockUser)"
+                                  : "sudo unlocked (admin restored + sudoers allow) — \(lockUser)") }
+        }
 
         let inside = fix.map { ZoneStore.containing(lat: $0.lat, lon: $0.lon, zones: zones) } ?? []
         let policyStr = policyText ?? ""
