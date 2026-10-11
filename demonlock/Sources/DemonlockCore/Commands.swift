@@ -67,6 +67,12 @@ func statusBody(_ s: StateSnapshot) -> String {
     L.append("demonlock" + (age > 5 ? "  ⚠️  state is \(Int(age))s stale — enforcer may be stuck" : ""))
     L.append("  enforced user : \(s.enforcedUser.isEmpty ? "(unset)" : s.enforcedUser)")
     L.append("  armed         : \(s.armed ? "ARMED" : "DISARMED")")
+    let sudoLine = switch Admin.sudoState() {
+        case .denied:    "DENIED (sudoers)"
+        case .allowed:   "ALLOWED, passwordless (sudoers)"
+        case .unmanaged: "ALLOWED — %admin governs, demonlock has no opinion yet"
+    }
+    L.append("  sudo          : " + sudoLine)
     L.append("  phase         : \(s.phase.uppercased())")
     if let v = s.verdict { L.append("  verdict       : \(v.uppercased())") }
     L.append("  reason        : \(s.reason)")
@@ -282,8 +288,17 @@ func runArm() {
     // status would lie. Running as root here, so do it inline. [review M2]
     let user = Settings.load().enforcedUserName()   // login name (resolves a numeric-uid enforcedUser)
     ReleaseValve.hardReset(username: user)
-    if let u = user { _ = Admin.revoke(u); note += "  (revoked admin + closed the release valve)" }
-    print("✓ ARMED\(note) — after a \(Int(Settings.load().countdownSeconds))s countdown out of policy the enforcer force-closes your GUI apps (sshd/tmux survive). `sudo demonlock disarm` to stop.")
+    var denyFailed = false
+    if let u = user {
+        denyFailed = !Admin.revoke(u)
+        note += denyFailed ? "  (closed the release valve)" : "  (denied sudo + closed the release valve)"
+    }
+    print("✓ ARMED\(note) — after a \(Int(Settings.load().countdownSeconds))s countdown out of policy the enforcer force-closes your GUI apps (sshd/tmux survive).")
+    // `sudo demonlock disarm` is unreachable once the deny lands — sudo is exactly what it refuses.
+    print("  the way back to sudo is the release valve: `demonlock admin-release-valve request \"<dur>\"`")
+    if denyFailed {
+        print("✗ COULD NOT DENY SUDO — \(Admin.policyPath) did not land. Enforcement is live but sudo still works.")
+    }
 }
 
 /// nosudo (no sudo): drop admin now. arm re-execs through the passwordless sudoers grant, so this does
@@ -296,13 +311,21 @@ func runNoSudo() {
     }
     let user = Settings.load().enforcedUserName()
     ReleaseValve.hardReset(username: user)
-    if let u = user { _ = Admin.revoke(u) }
-    print("✓ admin dropped — release valve closed too. (Already-open login shells may keep cached group membership until you log out.)")
+    let denied = user.map { Admin.revoke($0) } ?? false
+    guard denied else {
+        fail("✗ COULD NOT DENY SUDO — \(Admin.policyPath) did not land. Sudo still works.")
+    }
+    print("✓ sudo denied — release valve closed too. Back in via `demonlock admin-release-valve request \"<dur>\"`.")
 }
 
 func runDisarm() {
     requireRoot("disarm")
     do { try ArmStore.set(false) } catch { fail("✗ couldn't disarm: \(error)") }
+    // Disarming must leave no deny behind: it is the only verb that can, and a stale one would refuse
+    // the sudo needed to run it again.
+    if let u = Settings.load().enforcedUserName(), !Admin.allowSudo(u) {
+        fail("✗ DISARMED, but \(Admin.policyPath) could not be rewritten — sudo stays denied. Delete it by hand.")
+    }
     print("✓ DISARMED — everything keeps running and the countdown still shows, but nothing gets killed.")
 }
 
