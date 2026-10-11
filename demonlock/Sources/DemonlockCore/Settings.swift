@@ -198,8 +198,8 @@ struct Settings: Codable {
         try? s.save()
     }
 
-    /// The enforced user's LOGIN NAME (resolving a numeric-uid string through getpwuid), for the tools
-    /// that need a name not a uid (dseditgroup). nil if unset/unknown. [review — Admin.revoke needs a name]
+    /// The enforced user's LOGIN NAME (resolving a numeric-uid string through getpwuid): the sudoers
+    /// rule names a user, not a uid. nil if unset/unknown.
     func enforcedUserName() -> String? { enforcedUID().flatMap(userName(for:)) }
 
     /// Resolve enforcedUser (username or numeric uid string) to a uid. nil if unset/unknown.

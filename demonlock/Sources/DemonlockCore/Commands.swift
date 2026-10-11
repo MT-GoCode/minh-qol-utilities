@@ -285,7 +285,7 @@ func runArm() {
         note = "  (cleared the active snooze)"
     }
     // arm is the panic button: it must ALSO close the release valve (cancel a pending request AND revoke
-    // a live grant) + drop admin now, else a request would hand out sudo minutes after you armed, and
+    // a live grant) + deny sudo now, else a request would hand out sudo minutes after you armed, and
     // status would lie. Running as root here, so do it inline. [review M2]
     let user = Settings.load().enforcedUserName()   // login name (resolves a numeric-uid enforcedUser)
     ReleaseValve.hardReset(username: user)
@@ -302,12 +302,12 @@ func runArm() {
     }
 }
 
-/// nosudo (no sudo): drop admin now. arm re-execs through the passwordless sudoers grant, so this does
-/// too — it TIGHTENS (revoke only), so it's safe to allow without a password.
+/// nosudo (no sudo): deny sudo now. arm re-execs through the passwordless sudoers grant, so this does
+/// too — it TIGHTENS (deny only), so it's safe to allow without a password.
 func runNoSudo() {
     if geteuid() != 0 {
         let rc = Proc.run("/usr/bin/sudo", ["-n", Paths.binaryPath, "nosudo"])
-        if rc != 0 { fail("✗ couldn't drop admin without a password — the passwordless grant may be missing (reinstall), or run `sudo demonlock nosudo`.") }
+        if rc != 0 { fail("✗ couldn't deny sudo without a password — the passwordless grant may be missing (reinstall), or run `sudo demonlock nosudo`.") }
         exit(0)
     }
     let user = Settings.load().enforcedUserName()
