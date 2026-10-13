@@ -3,8 +3,8 @@
 # whitelist it), CLI wrapper, seed ~/.wtalk DATA templates (yours), load the LaunchAgent as you.
 # Run:  sudo ./install.sh [--prebuilt] [--no-prime-perms]
 #   --prebuilt        deploy dist/wtalk.app as-is (no PyInstaller, no keychain / smartcard PIN)
-#   --no-prime-perms  skip firing the Mic/Accessibility TCC prompts (install-all passes this on a
-#                     reinstall; --prime-perms blocks on a pending dialog when there is no GUI)
+#   --no-prime-perms  skip firing the Mic/Accessibility TCC prompts (for a reinstall; --prime-perms
+#                     blocks on a pending dialog when there is no GUI)
 set -uo pipefail
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "$APP_DIR/../scripts/install-lib.sh"

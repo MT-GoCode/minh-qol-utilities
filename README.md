@@ -69,8 +69,7 @@ sudo ./demonlock/register-recommended-spares.sh
 | **gitas** | one git identity manager: per-account name/email/PAT in one 0600 file, routed automatically by remote URL (authorship *and* auth from the same trigger). All GitHub over HTTPS+PAT — no keys, no `gh auth`. **Also runs on Linux.** | `./gitas/install.sh <accounts.ini>` | no |
 
 **Paseo daemon (`scripts/`).** `scripts/setup-paseo-daemon.sh` hands the third-party Paseo daemon to
-launchd (so it survives the desktop app dying — e.g. when demonlock closes the GUI on a lockout) and
-adds a nightly refresh that restarts it only after an app auto-update and only when no agent is running.
+launchd (so it survives the desktop app dying — e.g. when demonlock closes the GUI on a lockout).
 `scripts/unset-paseo-daemon.sh` reverses it. Both are no-sudo, run as you, and need `jq`. This is
 config-wiring for an external app, not a repo-built tool, so it's a manual script rather than an installer.
 

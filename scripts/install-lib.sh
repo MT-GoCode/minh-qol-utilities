@@ -1,6 +1,6 @@
 #!/bin/bash
-# Shared install primitives for minh-qol-utilities. Sourced by each app's install.sh / uninstall.sh and by
-# the top-level install-all.sh. Every dl_* function assumes ROOT with SUDO_USER set unless noted.
+# Shared install primitives for minh-qol-utilities. Sourced by each app's install.sh / uninstall.sh.
+# Every dl_* function assumes ROOT with SUDO_USER set unless noted.
 # Manifests declare a few vars + provide_bundle()/post_install(); dl_run_manifest wires the flow:
 #   build (provide_bundle) → [dl_stop if STOP_FIRST=yes] → deploy → CLI → post_install → spare.
 # Order matters: BUILD BEFORE STOP (a failed build must leave the running copy alone), and daemons that
@@ -34,7 +34,7 @@ dl_die()  { echo "✗ $*" >&2; exit 1; }
 #   no CLT, committed dist present       → deploy it
 #   else                                 → fail with the CLT hint
 # Never falls back to "any existing bundle" on a build FAILURE — that deploys stale code silently.
-# Echoes the chosen .app path. CODESIGN_IDENTITY (if set by install-all) is forwarded into the build
+# Echoes the chosen .app path. CODESIGN_IDENTITY (if set by the caller) is forwarded into the build
 # (sudo's env_reset would strip it, and the ladder would re-prompt the keychain per app).
 dl_pick_bundle() {  # <built_app_path> <build_script> [committed_dist_app]
   local built="$1" build="$2" dist="${3:-}"
@@ -230,7 +230,7 @@ dl_write_sudoers() {  # <name> <line...>
 }
 
 # Register an app in demonlock's spare list — IMMEDIATE (we're root). No-op with a note if demonlock
-# isn't installed yet (install-all orders demonlock first so this never fires there).
+# isn't installed yet (install demonlock first so this never fires).
 dl_register_spare() {  # <name(unused)> <bid> <tid> [--no-root-ownership]
   local dl=/Applications/Demonlock.app/Contents/MacOS/demonlock
   [ -x "$dl" ] || { echo "  · demonlock not installed — skipping spare registration for $2 (install demonlock, then: sudo demonlock safe-apps register $2)"; return 0; }
@@ -245,7 +245,7 @@ dl_register_spare() {  # <name(unused)> <bid> <tid> [--no-root-ownership]
 dl_unregister_spare() {  # <bid>
   # `safe-apps remove` is NAME-keyed (name = last bid component) and drops a marker into the USER-owned
   # rv/ inbox, so it must run as the console user (root's marker fails the owner check). Applied on the
-  # daemon's next tick — demonlock must still be running (uninstall-all removes it last).
+  # daemon's next tick — demonlock must still be running (uninstall it last).
   local dl=/Applications/Demonlock.app/Contents/MacOS/demonlock name="${1##*.}"
   [ -x "$dl" ] || return 0
   sudo -u "$(dl_console_user)" "$dl" safe-apps remove "$name" >/dev/null 2>&1 \
@@ -256,7 +256,7 @@ dl_unregister_spare() {  # <bid>
 
 # The common uninstall: stop launchd jobs, kill the process, remove app + CLIs + plists + spare entry.
 # Keeps the support dir unless --purge (state/credentials survive a reinstall). NO tccutil reset unless
-# --tcc <bid> is given (resetting means re-clicking every permission after `uninstall-all; install-all`).
+# --tcc <bid> is given (resetting means re-clicking every permission after a reinstall).
 # Runs from a root shell too (dl_console_user) — that is the lock-out escape.
 dl_uninstall_common() {  # --app Bundle.app [--proc name] [--cli name]... [--daemon label]... [--agent label]... [--support dir] [--purge] [--tcc bid] [--bid bid]
   local app="" proc="" support="" purge=0 tcc="" bid="" clis=() daemons=() agents=() u uid

@@ -29,7 +29,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --reconfigure) RECONFIG=1 ;;
         # --credentials-file: a 0600 two-line file (PROFILE=…\nAPI_KEY=…) — the profile ID is a credential
-        # and must never sit on argv (visible in `ps`). install-all passes this.
+        # and must never sit on argv (visible in `ps`).
         --credentials-file) CREDFILE="${2:-}"; [ -f "$CREDFILE" ] || { echo "error: --credentials-file needs a readable path" >&2; exit 1; }; RECONFIG=1; shift ;;
         --key-file) KEYFILE="${2:-}"; [ -n "$KEYFILE" ] || { echo "error: --key-file needs a path" >&2; exit 1; }; RECONFIG=1; shift ;;
         --profile)  PROFILE_ARG="${2:-}"; [ -n "$PROFILE_ARG" ] || { echo "error: --profile needs a value" >&2; exit 1; }; RECONFIG=1; shift ;;

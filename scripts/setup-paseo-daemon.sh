@@ -4,13 +4,10 @@
 #
 #   1. flips manageBuiltInDaemon=false in the app's desktop-settings.json
 #   2. installs LaunchAgent sh.paseo.daemon  (RunAtLoad + KeepAlive, `daemon run`)
-#   3. installs LaunchAgent sh.paseo.refresh (4:30am; restarts the daemon only
-#      when the app auto-updated underneath it AND no agent is running)
 #
-# Safe to re-run. Re-running rewrites both plists and bounces the daemon.
+# Safe to re-run. Re-running rewrites the plist and bounces the daemon.
 set -euo pipefail
 
-SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PASEO_BIN="$(command -v paseo || true)"
 [ -n "$PASEO_BIN" ] || PASEO_BIN="$HOME/.local/bin/paseo"
 [ -x "$PASEO_BIN" ] || { echo "paseo CLI not found" >&2; exit 1; }
@@ -61,37 +58,8 @@ cat > "$LA/sh.paseo.daemon.plist" <<EOF
 </plist>
 EOF
 
-cat > "$LA/sh.paseo.refresh.plist" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>sh.paseo.refresh</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/bin/bash</string>
-    <string>$SCRIPTS_DIR/paseo-refresh.sh</string>
-  </array>
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key><integer>4</integer>
-    <key>Minute</key><integer>30</integer>
-  </dict>
-  <key>StandardOutPath</key><string>$HOME/.paseo/refresh.log</string>
-  <key>StandardErrorPath</key><string>$HOME/.paseo/refresh.log</string>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>PASEO_BIN</key><string>$PASEO_BIN</string>
-    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-  </dict>
-</dict>
-</plist>
-EOF
-
-for label in sh.paseo.daemon sh.paseo.refresh; do
-  launchctl bootout "gui/$U/$label" 2>/dev/null || true; sleep 1
-  launchctl bootstrap "gui/$U" "$LA/$label.plist" 2>/dev/null || launchctl kickstart -k "gui/$U/$label" 2>/dev/null || true
-done
+launchctl bootout "gui/$U/sh.paseo.daemon" 2>/dev/null || true; sleep 1
+launchctl bootstrap "gui/$U" "$LA/sh.paseo.daemon.plist" 2>/dev/null || launchctl kickstart -k "gui/$U/sh.paseo.daemon" 2>/dev/null || true
 
 echo "==> waiting for daemon"
 for _ in $(seq 1 15); do
@@ -118,4 +86,4 @@ else
   echo "     sudo demonlock safe-apps register sh.paseo.desktop.helper --no-root-ownership --tid 99ZMJMKU9Y)"
 fi
 
-echo "==> done: daemon owned by launchd (sh.paseo.daemon), nightly refresh at 4:30"
+echo "==> done: daemon owned by launchd (sh.paseo.daemon)"

@@ -2,7 +2,7 @@
 # Install Remote Agent Connector: build+sign as your user, deploy the app root-owned, install the
 # `remote-agent-connector` + `rac` CLI, launch (registers a Login Item). Run:  sudo ./install.sh
 # NOTE: reinstalling KILLS the reverse tunnel (this is the SSH lifeline) — run it from a local terminal,
-# never from a session riding that tunnel. install-all skips rac over SSH for exactly this reason.
+# never from a session riding that tunnel.
 set -uo pipefail
 APP_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$APP_DIR/../scripts/install-lib.sh"
