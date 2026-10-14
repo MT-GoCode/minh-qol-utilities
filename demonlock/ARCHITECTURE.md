@@ -215,7 +215,8 @@ queued from the map) · `help`.
 d/h/m/s, or `"until <[day]HHMM>"`, e.g. `snooze "for 90m"` / `snooze "until 0730"`; **capped at 18h**;
 implies armed and **RE-ARMS automatically** at expiry — so escape-then-resume is just `snooze`) · plus
 the immediate/config variants of the subsystems (`safe-apps register`, `snooze-preset add`,
-`password-lockbox add`, `admin-release-valve set-*`, `… i-still-need-sudo`).
+`password-lockbox add`, `password-lockbox instant-unlock`, `admin-release-valve set-*`,
+`… i-still-need-sudo`).
 
 `arm` = enforce now (cancels a snooze); `disarm` = off indefinitely. `snoozetonight` and
 `igotshitdueatmidnight` are **gone** — `snooze-preset` supersedes both (see below).
@@ -416,6 +417,7 @@ demonlock password-lockbox show                              # names, unlock-del
 demonlock password-lockbox unlock <name>                     # no sudo; copyable after the entry's delay
 demonlock password-lockbox abort <name>                      # cancel a pending unlock / relock now
 demonlock password-lockbox copy <name>                       # if unlocked: copy (concealed) + relock immediately
+sudo demonlock password-lockbox instant-unlock <name>        # open now, no delay (sudo already outranks the delay)
 demonlock password-lockbox add --name <n> --delay "1h"       # then paste the secret twice (no sudo; sudo add = direct)
 ```
 

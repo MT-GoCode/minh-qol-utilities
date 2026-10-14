@@ -310,8 +310,8 @@ SNOOZE PRESETS
 **What:** a delay‑gated store for **arbitrary secrets** (Wi‑Fi passwords, tokens) — **not** your
 admin password (admin only comes from the release valve). `unlock` a secret, wait out its per‑entry
 delay, and it stays copyable until you `copy` it (which relocks it) or `abort`. The
-copy lands on the clipboard as a **concealed** type so clipboard managers don't retain it. Entirely
-**no sudo**.
+copy lands on the clipboard as a **concealed** type so clipboard managers don't retain it. No sudo,
+except `instant-unlock`, which skips the delay for whoever already holds sudo (a grant, or disarmed).
 
 | Command | |
 |---|---|
@@ -320,6 +320,7 @@ copy lands on the clipboard as a **concealed** type so clipboard managers don't 
 | `password-lockbox unlock <name>` | start the per‑entry delay |
 | `password-lockbox abort <name>` | cancel a pending unlock / relock now |
 | `password-lockbox copy <name>` | if unlocked: copy (concealed) + relock |
+| `sudo password-lockbox instant-unlock <name>` | open it now, no delay |
 | `password-lockbox remove <name>` | delete the entry entirely (removing tightens — no sudo) |
 
 **Delay:** per‑entry, floored at **1h** (no ceiling — you set each one). There is **no auto‑relock**:

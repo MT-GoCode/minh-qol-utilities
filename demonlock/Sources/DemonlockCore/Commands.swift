@@ -368,7 +368,8 @@ usage:
   demonlock password-lockbox unlock <name>      # after the entry's delay it becomes copyable (no sudo)
   demonlock password-lockbox abort <name>       # cancel a pending unlock / relock now
   demonlock password-lockbox copy <name>        # if unlocked: copy to clipboard (concealed) + relock
-  demonlock password-lockbox remove <name>      # delete the entry entirely (no sudo; removing tightens)
+  sudo demonlock password-lockbox instant-unlock <name>   # open it now, skipping the delay (sudo)
+  demonlock password-lockbox remove <name>     # delete the entry entirely (no sudo; removing tightens)
   demonlock password-lockbox add --name <n> --delay "<dur>"        # then paste the secret twice (no sudo)
   (this holds arbitrary secrets — NOT the admin password; admin is only via the release valve)
 """
@@ -382,6 +383,7 @@ func runLockbox(_ args: [String]) {
     case "abort":  lockboxMark(Paths.lbAbortMarker, rest.first, "abort")
     case "remove": lockboxMark(Paths.lbRemoveMarker, rest.first, "remove")
     case "copy":   lockboxCopy(rest.first)
+    case "instant-unlock": lockboxInstantUnlock(rest.first)
     case "add":    lockboxAdd(rest)
     case "help", "--help", "-h": print(lockboxUsage)
     default: fail("✗ unknown subcommand '\(sub)'\n" + lockboxUsage)
@@ -394,6 +396,19 @@ private func lockboxShow() {
         return [e.name, TimeSpec.fmtLeft(e.delaySec), status]
     }
     print(Table.section("PASSWORD LOCKBOX", ["name", "unlock-delay", "status"], rows))
+}
+
+/// Root already holds everything the unlock delay protects (sudo is only granted while disarmed or
+/// during a release-valve grant), so the wait buys nothing. Cancels any pending unlock of the entry
+/// first, so the queue never later reports a stale row for it.
+private func lockboxInstantUnlock(_ name: String?) {
+    requireRoot("password-lockbox instant-unlock")
+    guard let name, !name.isEmpty else { fail("✗ usage: sudo demonlock password-lockbox instant-unlock <name>") }
+    guard LockboxStore.load().contains(where: { $0.name == name }) else { fail("✗ no secret '\(name)'.") }
+    let now = nowEpoch()
+    Lockbox.unlocksQueue().rootCancel(keys: [name], now: now, reason: "instant-unlock")
+    var f = Lockbox.LBFile.load(); f.unlockedAt[name] = now; f.save()
+    print("✓ '\(name)' unlocked (shows on the daemon's next tick) — `demonlock password-lockbox copy \(name)`.")
 }
 
 private func lockboxMark(_ path: String, _ name: String?, _ verb: String) {
@@ -1040,7 +1055,8 @@ func printHelp() {
       admin-release-valve set-gate-policy "<expr>" | set-delay "<dur>" | set-max-request-duration "<dur>"
                           Configure the release valve (gate uses policy syntax + IN_POLICY). Then
                           `admin-release-valve request "<dur>"` (no sudo) works.
-      safe-apps register … | snooze-preset add … | password-lockbox add …   Immediate variants.
+      safe-apps register … | snooze-preset add … | password-lockbox add … | password-lockbox instant-unlock …
+                          Immediate variants.
 
     POLICY LANGUAGE  (the ALLOW condition — combine with AND / OR / NOT / parentheses):
       LOCATED_IN_ANY(["zone name", ...])
