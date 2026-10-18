@@ -16,6 +16,9 @@ wrong tag, fixed by re-tagging.
     2 = stacked with the "+" bar on the right; 3 = quadrants with "+" in the fourth; …
     up to the configured grid (Settings, default 3×2, both ≥2) — only past that does it
     scroll
+  - click a desktop card → switch to it: **all** its windows come to the front in the
+    stacking order they already had, so it looks exactly as you left it (other desktops'
+    windows show only in the gaps)
   - hover a window → outline + ✕ close / ⏻ quit buttons; click it → raise it; thumbnails
     shrink so every window in a desktop always fits
   - **drag a thumbnail onto another desktop** to move it; drag a desktop *header* onto
@@ -25,6 +28,10 @@ wrong tag, fixed by re-tagging.
     windows for the next 8s are tagged to it) · 🗑 delete (gracefully closes its windows —
     dirty documents get their save dialog and survive into the current desktop)
   - windows inside a desktop are ordered by the Settings priority list
+- **⌘⌥⇥** — AltTab for desktops: keep ⌘⌥ held, ⇥/⇧⇥ moves a white cursor between desktop
+  cards, release ⌘⌥ to switch to the highlighted one (esc cancels).
+- **⌘⌥1…9** — switch straight to desktop N. With no desktop N the key passes through to
+  the app.
 - **⌘⇥** — switcher, scoped to the current desktop, live thumbnails. Hold ⌘, press ⇥/⇧⇥
   or arrows to pick, release ⌘ to commit, esc to cancel. Hover gives the same ✕/⏻ buttons.
 - menu bar: desktops (click to jump), Show All Desktops, New Desktop, Seed Current
@@ -34,12 +41,12 @@ wrong tag, fixed by re-tagging.
   excluded apps · seed commands (toggle + edit) · permission status with grant buttons.
   Stored in `~/Library/Application Support/multistreamviewer/config.json`.
 
-No numbered hotkeys — you navigate by the ⌘⌥ overview and by ⌘⇥. New windows join
+New windows join
 whatever desktop is current; focusing a window from another desktop (⌘⇥, Dock, a
 notification) makes that desktop current, so the switcher scope follows you.
 
 Neither gesture ever moves a window on your real screen — the ⌘⌥ overview is a map, and
-switching desktops just changes which windows ⌘⇥ offers and raises one of them. The
+switching desktops just changes which windows ⌘⇥ offers and raises its windows. The
 thumbnails are read-only previews.
 
 ## Install

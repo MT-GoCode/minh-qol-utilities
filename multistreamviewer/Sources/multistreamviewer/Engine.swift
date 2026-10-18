@@ -104,22 +104,16 @@ final class Engine {
 
     // MARK: ops
 
-    /// Jump to a group: raise its most recent window (which also makes it current via
-    /// the focus-follow in tick). An empty group just becomes the adoption target.
+    /// Jump to a group: bring ALL its on-screen windows to the front, in the stacking order
+    /// they already have among themselves, so the desktop looks exactly as you left it; other
+    /// desktops' windows show only where it leaves gaps. The top one takes focus. An empty
+    /// group just becomes the adoption target.
     func jump(to id: UUID) {
         guard groups.contains(where: { $0.id == id }) else { return }
         currentID = id
-        let wins = windowsOf(id)
-        var pick: Win?
-        for m in mru[id] ?? [] {
-            if let w = wins.first(where: { $0.id == m }) {
-                pick = w
-                break
-            }
-        }
-        if let w = pick ?? wins.first {
-            Raise.raise(pid: w.pid, wid: w.id)
-        }
+        var depth: [CGWindowID: Int] = [:]
+        for (i, wid) in WindowTruth.stackOrder().enumerated() { depth[wid] = i }
+        Raise.raiseStack(windowsOf(id).sorted { (depth[$0.id] ?? .max) < (depth[$1.id] ?? .max) })
         persistIfChanged()
         onChange?()
     }

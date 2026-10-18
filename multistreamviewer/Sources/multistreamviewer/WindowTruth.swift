@@ -147,6 +147,13 @@ enum WindowTruth {
         return nil
     }
 
+    /// On-screen window ids, front to back (CGWindowList's documented order).
+    static func stackOrder() -> [CGWindowID] {
+        let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
+            as? [[String: Any]] ?? []
+        return info.compactMap { $0[kCGWindowNumber as String] as? CGWindowID }
+    }
+
     /// `multistreamviewer windows` — every on-screen candidate and whether the switcher takes it. The
     /// check for everything above: open Chrome's ⌘F bar, or a save dialog, and it must
     /// print DROP while the window it belongs to still prints KEEP.

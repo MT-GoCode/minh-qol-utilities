@@ -85,7 +85,11 @@ private struct DesktopCard: View {
                 .fill(.ultraThinMaterial)
                 .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(
                     (targeted || g.isCurrent) ? Color.accentColor : .white.opacity(0.12),
-                    lineWidth: (targeted || g.isCurrent) ? 2 : 1)))
+                    lineWidth: (targeted || g.isCurrent) ? 2 : 1))
+                .overlay(RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(.white, lineWidth: 4).opacity(o.selected == g.id ? 1 : 0)))
+        .contentShape(Rectangle())
+        .onTapGesture { o.jump(to: g.id) }       // anywhere on the card; tiles' own taps win
         .onHover { hover = $0 }
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Overlay.space)) } action: {
             o.cardFrames[g.id] = $0
@@ -95,8 +99,8 @@ private struct DesktopCard: View {
 
     private var targeted: Bool { o.dropTarget == g.id }
 
-    /// High priority so it outranks the tap (activate/jump) on the same view; a click that
-    /// never moves fails the drag and the tap fires as before.
+    /// High priority so it outranks the taps (activate/jump) beneath it; a click that never
+    /// moves fails the drag and the tap fires as before.
     private func dragging(_ item: Overlay.Dragged) -> some Gesture {
         DragGesture(coordinateSpace: .named(Overlay.space))
             .onChanged { o.dragMoved(item, to: $0.location) }
@@ -129,7 +133,6 @@ private struct DesktopCard: View {
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())
-            .onTapGesture { o.jump(to: g.id) }
             .highPriorityGesture(dragging(.desktop(g)), including: o.renamingID == g.id ? .subviews : .all)
 
             if hover, o.renamingID != g.id {

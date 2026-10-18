@@ -51,6 +51,27 @@ enum Raise {
         NSRunningApplication(processIdentifier: pid)?.terminate()
     }
 
+    /// Bring a desktop's windows to the front as one block, keeping their stacking among
+    /// themselves. `front` is front-to-back; each window is raised over everything, back
+    /// first, so the last (frontmost) one lands on top and takes focus.
+    static func raiseStack(_ front: [Win]) {
+        guard let top = front.first else { return }
+        for w in front.dropFirst().reversed() { bringForward(pid: w.pid, wid: w.id) }
+        raise(pid: top.pid, wid: top.id)
+    }
+
+    /// This one window over every other app's, without making it key.
+    private static func bringForward(pid: pid_t, wid: CGWindowID) {
+        if let setFront, let psnForPID {
+            var psn = ProcessSerialNumber()
+            _ = psnForPID(pid, &psn)
+            _ = setFront(&psn, wid, 0x200)   // userGenerated: front process + this window only
+        }
+        if let el = element(pid: pid, wid: wid) {
+            AXUIElementPerformAction(el, kAXRaiseAction as CFString)
+        }
+    }
+
     static func raise(pid: pid_t, wid: CGWindowID) {
         generation += 1
         let g = generation

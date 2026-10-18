@@ -2,6 +2,8 @@ import AppKit
 
 // One CGEvent tap. Two gestures, both harmless — neither ever moves a window:
 //   hold ⌘⌥       → overlay of all desktops in spaced views; release hides.
+//   ⌘⌥ + ⇥/⇧⇥     → cycle a desktop cursor in that overlay; releasing ⌘⌥ jumps there.
+//   ⌘⌥ + 1…9      → jump straight to desktop N (passed through if there is no desktop N).
 //   ⌘⇥            → in-group switcher. Hold ⌘, ⇥/⇧⇥/arrows to pick, release ⌘ commits,
 //                   esc cancels. (Replaces native ⌘⇥, scoped to the current group.)
 //
@@ -89,6 +91,9 @@ final class Hotkeys {
 
     private func pass(_ e: CGEvent) -> Unmanaged<CGEvent> { Unmanaged.passUnretained(e) }
 
+    /// ANSI keycodes of the top-row 1…9 (not sequential — the layout's history).
+    private static let digitCodes: [Int64: Int] = [18: 1, 19: 2, 20: 3, 21: 4, 23: 5, 22: 6, 26: 7, 28: 8, 25: 9]
+
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
@@ -105,11 +110,12 @@ final class Hotkeys {
 
         if type == .flagsChanged {
             if s.isOpen, !cmd, code == 54 || code == 55 { s.commit() }   // ⌘ released → commit
-            // hold ⌘⌥ (nothing else) → overlay of all desktops; release/break → hide.
-            if cmd, opt, !ctrl, !shift, !s.isOpen {
+            // hold ⌘⌥ (nothing else) → overlay of all desktops; release/break → hide (or
+            // commit a ⌘⌥⇥ selection). ⇧ is allowed while selecting: it's ⌘⌥⇧⇥'s reverse.
+            if cmd, opt, !ctrl, !shift || Overlay.shared.selected != nil, !s.isOpen {
                 Overlay.shared.scheduleHeld()
             } else {
-                Overlay.shared.cancelHeld()
+                Overlay.shared.released()
             }
             return pass(event)
         }
@@ -118,8 +124,22 @@ final class Hotkeys {
         }
         guard type == .keyDown else { return pass(event) }
 
-        // Any real key while ⌘⌥ is held is a chord (⌘⌥I, ⌘⌥esc, …), not an overlay peek.
-        if cmd, opt { Overlay.shared.cancelHeld() }
+        // ⌘⌥ layer: desktop cursor and direct jumps; any other key is a chord (⌘⌥I, ⌘⌥esc, …).
+        if cmd, opt {
+            if !ctrl, code == 48 {                // tab
+                consume(code)
+                DispatchQueue.main.async { Overlay.shared.cycle(shift ? -1 : 1) }
+                return nil
+            }
+            let groups = Engine.shared.groups
+            if !ctrl, !shift, let n = Self.digitCodes[code], groups.indices.contains(n - 1) {
+                consume(code)
+                let id = groups[n - 1].id
+                DispatchQueue.main.async { Overlay.shared.jump(to: id) }
+                return nil
+            }
+            Overlay.shared.chord()
+        }
 
         // ⌘ layer: the switcher.
         if cmd, !opt, !ctrl {

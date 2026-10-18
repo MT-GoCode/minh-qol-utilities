@@ -30,11 +30,35 @@ final class Overlay: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
     }
 
-    /// ⌘⌥ released (or broken): cancel a pending peek, hide a held (non-pinned) overlay.
-    /// A rename or drag in progress keeps it up — letting go of the modifiers to type, or
-    /// mid-drag, must not close the overlay out from under you; `settle()` honours the
-    /// release once it ends.
-    func cancelHeld() {
+    /// ⌘⌥⇥ cursor: which desktop releasing ⌘⌥ will jump to. nil = plain peek.
+    @Published private(set) var selected: UUID?
+
+    /// ⌘⌥⇥ / ⌘⌥⇧⇥: open now (no peek delay) and move the cursor, starting from the current
+    /// desktop, wrapping.
+    func cycle(_ delta: Int) {
+        peek?.cancel(); peek = nil
+        if !isOpen { present(pinned: false) }
+        let ids = groups.map(\.id)
+        guard !ids.isEmpty else { return }
+        let from = ids.firstIndex(of: selected ?? Engine.shared.currentID) ?? 0
+        selected = ids[((from + delta) % ids.count + ids.count) % ids.count]
+    }
+
+    /// ⌘⌥ released (or broken): commit a ⌘⌥⇥ selection, otherwise end the peek.
+    func released() {
+        if let s = selected { jump(to: s) } else { dismissPeek() }
+    }
+
+    /// Any other key under ⌘⌥ is a chord (⌘⌥I, ⌘⌥esc, …): drop the selection, end the peek.
+    func chord() {
+        selected = nil
+        dismissPeek()
+    }
+
+    /// Cancel a pending peek, hide a held (non-pinned) overlay. A rename or drag in progress
+    /// keeps it up — letting go of the modifiers to type, or mid-drag, must not close the
+    /// overlay out from under you; `settle()` honours the release once it ends.
+    private func dismissPeek() {
         peek?.cancel(); peek = nil
         if isOpen, !pinned, renamingID == nil, drag == nil { hide() }
     }
@@ -50,6 +74,7 @@ final class Overlay: ObservableObject {
         pinned = false
         renamingID = nil
         drag = nil
+        selected = nil
         Captures.shared.stopIfIdle()
     }
 
@@ -87,7 +112,7 @@ final class Overlay: ObservableObject {
             }
         }
     }
-    static let space = "overlay"                       // coordinate space of drag points + card frames
+    nonisolated static let space = "overlay"           // coordinate space of drag points + card frames
     @Published private(set) var drag: (item: Dragged, at: CGPoint)?
     var cardFrames: [UUID: CGRect] = [:]
     var dropTarget: UUID? {
