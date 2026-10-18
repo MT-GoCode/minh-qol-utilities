@@ -107,8 +107,7 @@ paused; no-op if nowplaying-cli isn't installed).
   '$foo' in scope` and `cannot assign to property: 'self' is immutable` — all downstream of that one
   missing plugin. Verify with `xcode-select -p` (must print the Xcode path, not CommandLineTools) and
   `xcrun --show-sdk-path`. Needed to build the Swift apps (demonlock, nextdns-sidecar, blockrem,
-  multistreamviewer, stayup, remote-agent-connector). *(demonlock can skip the whole toolchain:
-  `sudo ./demonlock/install.sh --prebuilt` deploys its committed, signed `dist/`.)*
+  multistreamviewer, stayup, remote-agent-connector).
 - **A console (GUI) login as you** — the gui-domain LaunchAgents can't load over plain SSH, and the installers now fail loudly when a job doesn't come up. Run installs from a local terminal (or `rac exec`), and reinstall `remote-agent-connector` only from a local terminal — its reinstall kills the tunnel an SSH session rides on.
 - **Admin**: you must be in the `admin` group. On a hardened machine that means a live demonlock release-valve grant with enough time left (`demonlock admin-release-valve status`); the grant can be extended while live with `sudo demonlock admin-release-valve i-still-need-sudo "for 1h"`.
 - **git identity (gitas)** — `./gitas/install.sh ~/my-accounts.ini` (no sudo). Do this before any git work:
@@ -180,35 +179,6 @@ chooses best-first and prints the choice at install:
 3. **Ad-hoc** — last resort; works, but the grant resets each rebuild.
 
 Override with `CODESIGN_IDENTITY="…"`.
-
-## Preserving Developer-ID builds (GitHub releases)
-The Developer ID gives the cleanest (Apple-rooted) trust, but lapses if you drop the Apple Developer
-account. The signed bundles carry a **secure timestamp**, so a build made *now* stays valid forever.
-While you still have the cert, publish the dev-signed bundles as a release. `gh` needs no stored
-login — gitas hands it a PAT (`brew install gh`, then prefix the command with
-`gitas exec personal --`):
-
-```bash
-# with your Developer ID cert present, after the repo is pushed:
-./demonlock/install/build.sh --refresh-dist  # produces demonlock/dist/Demonlock.app  (Dev-ID-signed)
-ditto -c -k --keepParent demonlock/dist/Demonlock.app /tmp/Demonlock.app.zip
-gh release create devsigned-$(date +%Y%m) /tmp/Demonlock.app.zip \
-    --title "Developer-ID-signed bundles" \
-    --notes "Prebuilt, Developer-ID-signed + timestamped — install to keep Apple-rooted trust after the cert lapses."
-```
-
-**Using them later** on a Mac with no Developer ID — "copy back + install" with the explicit
-`--prebuilt` flag (a toolchain otherwise always wins and builds the current source; the old automatic
-"no cert → use dist" rule silently installed stale bundles, so it's gone):
-```bash
-gh release download devsigned-YYYYMM --dir /tmp/dl
-ditto -x -k /tmp/dl/Demonlock.app.zip demonlock/dist/      # → demonlock/dist/Demonlock.app
-sudo ./demonlock/install.sh --prebuilt                     # deploys the dev-signed dist/, no rebuild, no keychain
-```
-Refresh a committed `dist/` deliberately with `./demonlock/install/build.sh --refresh-dist`.
-(demonlock is the only app that commits a prebuilt `dist/` bundle, so it's the one that installs on a
-toolchain-less Mac by copy. wtalk is PyInstaller-frozen + Developer-ID-signed by `sudo ./wtalk/install.sh`
-on the machine; the other Swift apps build + sign from source at install time.)
 
 ## JAMF / MDM caveats (org policy — can't be fixed in code)
 - A managed **content/network filter or pinned DNS** will fight nextdns-sidecar's `pf` lockdown + DoH profile.

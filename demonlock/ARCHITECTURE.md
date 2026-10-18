@@ -16,7 +16,7 @@ the root daemon — no setuid binary, no held password). Getting sudo back is th
 **admin release valve**.
 
 ```bash
-sudo ./install.sh                 # build (or deploy prebuilt) → sign → install → load. DISARMED.
+sudo ./install.sh                 # build → sign → install → load. DISARMED.
 demonlock scan                    # walk the floor, capture AP hardware addresses (no sudo)
 demonlock zones                   # draw/name zones on a map (add/delete = admin now, or queue 36h)
 sudo demonlock setpolicy '...'    # set the allow-condition
@@ -85,18 +85,14 @@ policy. **BSSID** (AP hardware MAC) is used over the SSID name because names are
 | `SafeApps.swift` · `SnoozePresets.swift` · `Lockbox.swift` | the request→delay→apply subsystems: spare list, named snooze shortcuts, password lockbox |
 | `DelayedChange.swift` · `MarkerIO.swift` · `TimeSpec.swift` · `Tables.swift` | delayed policy/zones/gate-policy engine; hardened marker read (O_NOFOLLOW + owner-check + unlink-verify); duration/target parsing; table renderer |
 | `install/` | `build.sh` (codesign), `install.sh`, `uninstall.sh`, `Info.plist`, two `.plist`s |
-| `dist/Demonlock.app` | prebuilt, signed bundle so a toolchain-less Mac installs by copy |
 
 ## Install
 
 `sudo ./install.sh` (auto-detects what it needs):
 
-1. **Picks the bundle by what you have:** if a **Developer ID cert** is in your login keychain →
-   builds + re-signs fresh as `$SUDO_USER` (`swift build -c release` → `codesign --options runtime
-   --timestamp`, refreshing `dist/`). **No cert** → deploys the bundled `dist/Demonlock.app`
-   (already Developer-ID-signed + timestamped) **without re-signing**, so it isn't downgraded to
-   ad-hoc. (Ad-hoc build is the last resort: toolchain but no cert and no `dist/`.) Strips
-   quarantine either way.
+1. **Builds + signs** as `$SUDO_USER` (`swift build -c release` → `codesign --options runtime
+   --timestamp` with the signing-ladder identity, below). Needs the Xcode toolchain; strips
+   quarantine.
 2. Copies app → `/Applications`, a CLI wrapper → `/usr/local/bin/demonlock`.
 3. Seeds `/Library/Application Support/Demonlock/` — `enforcedUser`=`$SUDO_USER` + `wifiDevice`
    auto-detected; `armed=0` ⇒ **installs disarmed**. A reinstall **merges** those two per-machine
@@ -467,8 +463,7 @@ Apple Silicon requires a signature to run at all. The installer auto-picks the b
    account needed.
 3. **Ad-hoc** — last resort. Works, but the TCC grant resets on every rebuild.
 
-Override with `CODESIGN_IDENTITY="…"`. (demonlock also keeps a committed Developer-ID `dist/` bundle
-it deploys when you have no cert — so it's never downgraded.)
+Override with `CODESIGN_IDENTITY="…"`.
 
 ## Uninstall
 

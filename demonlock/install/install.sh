@@ -1,11 +1,10 @@
 #!/bin/bash
 # Install Demonlock: build+sign (as you), deploy (root), seed defaults, load both services.
-# Run:  sudo ./install.sh [--prebuilt]     (--prebuilt = deploy the committed dist/, no build, no keychain)
+# Run:  sudo ./install.sh
 set -uo pipefail
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "$APP_DIR/../scripts/install-lib.sh"
 dl_require_root
-[ "${1:-}" = "--prebuilt" ] && export PREBUILT=1
 cd "$APP_DIR"
 
 APP_TYPE=gui-app
@@ -22,7 +21,7 @@ USER_HOME="$(dl_user_home)"
 
 # NOT stopped before deploy: the enforcer keeps running through the copy (the old inode stays mapped);
 # post_install's dl_install_launchd does bootout → bootstrap, so there is no enforcement gap while armed.
-provide_bundle() { dl_pick_bundle "$APP_DIR/Demonlock.app" "$APP_DIR/install/build.sh" "$APP_DIR/dist/Demonlock.app"; }
+provide_bundle() { dl_pick_bundle "$APP_DIR/Demonlock.app" "$APP_DIR/install/build.sh"; }
 
 post_install() {
   # Passwordless grants — both TIGHTEN-only (safe without admin; survive you dropping admin). They target
