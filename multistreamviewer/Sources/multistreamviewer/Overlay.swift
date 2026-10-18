@@ -31,11 +31,12 @@ final class Overlay: ObservableObject {
     }
 
     /// ⌘⌥ released (or broken): cancel a pending peek, hide a held (non-pinned) overlay.
-    /// While a rename is in progress the overlay stays put — otherwise letting go of the
-    /// modifiers to type would close the very field you just opened.
+    /// A rename or drag in progress keeps it up — letting go of the modifiers to type, or
+    /// mid-drag, must not close the overlay out from under you; `settle()` honours the
+    /// release once it ends.
     func cancelHeld() {
         peek?.cancel(); peek = nil
-        if isOpen, !pinned, renamingID == nil { hide() }
+        if isOpen, !pinned, renamingID == nil, drag == nil { hide() }
     }
 
     func toggle() {
@@ -48,6 +49,7 @@ final class Overlay: ObservableObject {
         panel = nil
         pinned = false
         renamingID = nil
+        drag = nil
         Captures.shared.stopIfIdle()
     }
 
@@ -62,17 +64,52 @@ final class Overlay: ObservableObject {
     func jump(to id: UUID) { Engine.shared.jump(to: id); hide() }
     func focus(_ w: Win) { Engine.shared.focusWindow(w.id); hide() }
     func newGroup() { Engine.shared.newGroup(); refresh() }
-    func drop(_ wid: CGWindowID, on group: UUID) { Engine.shared.retag(wid, to: group); refresh() }
     func closeWindow(_ w: Win) { Engine.shared.closeWindow(w.id) }
     func killApp(_ w: Win) { Engine.shared.killApp(w.id) }
     func seed(_ id: UUID) { Engine.shared.seed(id) }
     func deleteGroup(_ id: UUID) { Engine.shared.deleteGroup(id); refresh() }
     func beginRename(_ id: UUID) { renamingID = id }
 
-    /// Renaming keeps the overlay alive past the ⌘⌥ release; when it ends, honour that
-    /// release (close) unless the keys are still down or the panel was pinned open.
     func endRename() {
         renamingID = nil
+        settle()
+    }
+
+    // Drag-to-move is tracked here, in-panel, not via system drag-and-drop: an AppKit drag
+    // session reads held ⌘⌥ as "make alias" and the drop is refused — and ⌘⌥ is exactly
+    // what's held while the overlay is peeked.
+    enum Dragged {
+        case window(Win), desktop(GroupView)
+        var label: String {
+            switch self {
+            case .window(let w): w.title.isEmpty ? w.app : w.title
+            case .desktop(let g): g.name
+            }
+        }
+    }
+    static let space = "overlay"                       // coordinate space of drag points + card frames
+    @Published private(set) var drag: (item: Dragged, at: CGPoint)?
+    var cardFrames: [UUID: CGRect] = [:]
+    var dropTarget: UUID? {
+        drag.flatMap { d in cardFrames.first { $0.value.contains(d.at) }?.key }
+    }
+
+    func dragMoved(_ item: Dragged, to p: CGPoint) { drag = (item, p) }
+
+    func dragEnded() {
+        if let item = drag?.item, let target = dropTarget {
+            switch item {
+            case .window(let w): Engine.shared.retag(w.id, to: target)
+            case .desktop(let g): Engine.shared.reorder(g.id, before: target)
+            }
+        }
+        drag = nil
+        settle()
+    }
+
+    /// A rename/drag outlived the ⌘⌥ release: close now unless the keys are back down or
+    /// the panel was pinned open.
+    private func settle() {
         let held = CGEventSource.flagsState(.combinedSessionState)
             .isSuperset(of: [.maskCommand, .maskAlternate])
         if !pinned, !held { hide() } else { refresh() }

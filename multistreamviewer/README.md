@@ -19,7 +19,8 @@ wrong tag, fixed by re-tagging.
   - hover a window → outline + ✕ close / ⏻ quit buttons; click it → raise it; thumbnails
     shrink so every window in a desktop always fits
   - **drag a thumbnail onto another desktop** to move it; drag a desktop *header* onto
-    another card to reorder desktops
+    another card to reorder desktops — works with ⌘⌥ still held, and letting go mid-drag
+    keeps the overview up until you drop
   - hover a desktop header → ✏ rename · 🪄 seed (runs the checked seed commands; new
     windows for the next 8s are tagged to it) · 🗑 delete (gracefully closes its windows —
     dirty documents get their save dialog and survive into the current desktop)

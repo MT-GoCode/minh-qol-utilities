@@ -2,7 +2,7 @@ import SwiftUI
 
 // One window as a live thumbnail. Shared by the switcher and the overview.
 // - hover → outline + a ✕ close / ⏻ quit pair in the top-right
-// - click the body → activate (raise) the window
+// - click the body → activate (raise) the window; the overview adds drag-to-move on top
 // - selected (switcher keyboard cursor) → accent outline
 // Thumbnails come from Captures (Screen Recording); absent → app icon fallback.
 struct Tile: View {
@@ -18,15 +18,15 @@ struct Tile: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            Button(action: onActivate) {
-                VStack(spacing: 4) {
-                    thumb
-                    if thumbHeight >= 52 { caption }   // too small for a legible label
-                }
-                .padding(5)
-                .contentShape(Rectangle())
+            // A tap, not a Button: a Button captures the mouse on press, so the overview's
+            // drag gesture on this tile would never start.
+            VStack(spacing: 4) {
+                thumb
+                if thumbHeight >= 52 { caption }   // too small for a legible label
             }
-            .buttonStyle(.plain)
+            .padding(5)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onActivate)
 
             if hover {
                 HStack(spacing: 4) {

@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 // All desktops in spaced views, laid out by the progressive GridLayout: one desktop
 // fills the screen, the "+" rides a thin edge bar (or a free cell) until the configured
@@ -23,7 +22,11 @@ struct OverlayView: View {
                 } else {
                     fixed(l, size: geo.size, n: n)
                 }
+                if let d = o.drag {
+                    DragPreview(item: d.item, caps: caps).position(d.at).allowsHitTesting(false)
+                }
             }
+            .coordinateSpace(name: Overlay.space)
         }
         .ignoresSafeArea()
     }
@@ -69,7 +72,6 @@ private struct DesktopCard: View {
     let g: GroupView
     @ObservedObject var caps: Captures
     @State private var hover = false
-    @State private var targeted = false
     @State private var draft = ""
 
     var body: some View {
@@ -82,57 +84,53 @@ private struct DesktopCard: View {
             RoundedRectangle(cornerRadius: 16)
                 .fill(.ultraThinMaterial)
                 .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(
-                    targeted ? Color.accentColor
-                        : (g.isCurrent ? Color.accentColor : .white.opacity(0.12)),
+                    (targeted || g.isCurrent) ? Color.accentColor : .white.opacity(0.12),
                     lineWidth: (targeted || g.isCurrent) ? 2 : 1)))
         .onHover { hover = $0 }
-        .onDrop(of: [.text], isTargeted: $targeted) { providers in
-            guard let p = providers.first else { return false }
-            p.loadObject(ofClass: NSString.self) { obj, _ in
-                guard let s = obj as? String else { return }
-                Task { @MainActor in
-                    if s.hasPrefix("group:"), let id = UUID(uuidString: String(s.dropFirst(6))) {
-                        Engine.shared.reorder(id, before: g.id)
-                        Overlay.shared.refresh()
-                    } else if let wid = CGWindowID(s) {
-                        Overlay.shared.drop(wid, on: g.id)
-                    }
-                }
-            }
-            return true
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Overlay.space)) } action: {
+            o.cardFrames[g.id] = $0
         }
+        .onDisappear { o.cardFrames[g.id] = nil }
+    }
+
+    private var targeted: Bool { o.dropTarget == g.id }
+
+    /// High priority so it outranks the tap (activate/jump) on the same view; a click that
+    /// never moves fails the drag and the tap fires as before.
+    private func dragging(_ item: Overlay.Dragged) -> some Gesture {
+        DragGesture(coordinateSpace: .named(Overlay.space))
+            .onChanged { o.dragMoved(item, to: $0.location) }
+            .onEnded { _ in o.dragEnded() }
     }
 
     private var header: some View {
         HStack(spacing: 8) {
-            Button { o.jump(to: g.id) } label: {
-                HStack(spacing: 8) {
-                    Text("\(g.index + 1)")
-                        .font(.system(size: 13, weight: .bold))
-                        .frame(width: 22, height: 22)
-                        .background(Circle().fill(g.isCurrent ? Color.accentColor : .gray.opacity(0.4)))
-                        .foregroundStyle(.white)
-                    if o.renamingID == g.id {
-                        TextField("name", text: $draft)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(maxWidth: 180)
-                            .onChange(of: draft) { _, v in
-                                if v.count > kMaxDesktopName {
-                                    draft = String(v.prefix(kMaxDesktopName))
-                                }
-                                o.liveRename(g.id, draft)   // updates as you type
+            HStack(spacing: 8) {
+                Text("\(g.index + 1)")
+                    .font(.system(size: 13, weight: .bold))
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(g.isCurrent ? Color.accentColor : .gray.opacity(0.4)))
+                    .foregroundStyle(.white)
+                if o.renamingID == g.id {
+                    TextField("name", text: $draft)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 180)
+                        .onChange(of: draft) { _, v in
+                            if v.count > kMaxDesktopName {
+                                draft = String(v.prefix(kMaxDesktopName))
                             }
-                            .onSubmit { o.endRename() }
-                            .onExitCommand { o.endRename() }
-                    } else {
-                        Text(g.name).font(.system(size: 15, weight: .semibold))
-                    }
-                    Spacer(minLength: 0)
+                            o.liveRename(g.id, draft)   // updates as you type
+                        }
+                        .onSubmit { o.endRename() }
+                        .onExitCommand { o.endRename() }
+                } else {
+                    Text(g.name).font(.system(size: 15, weight: .semibold))
                 }
-                .contentShape(Rectangle())
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.plain)
-            .onDrag { NSItemProvider(object: "group:\(g.id.uuidString)" as NSString) }
+            .contentShape(Rectangle())
+            .onTapGesture { o.jump(to: g.id) }
+            .highPriorityGesture(dragging(.desktop(g)), including: o.renamingID == g.id ? .subviews : .all)
 
             if hover, o.renamingID != g.id {
                 headerButton("pencil") { draft = g.name; o.beginRename(g.id) }
@@ -164,7 +162,7 @@ private struct DesktopCard: View {
                              onActivate: { o.focus(w) },
                              onClose: { o.closeWindow(w) },
                              onKill: { o.killApp(w) })
-                            .onDrag { NSItemProvider(object: "\(w.id)" as NSString) }
+                            .highPriorityGesture(dragging(.window(w)))
                     }
                 }
             }
@@ -194,6 +192,25 @@ private struct DesktopCard: View {
                 .foregroundStyle(tint)
         }
         .buttonStyle(.plain)
+    }
+}
+
+private struct DragPreview: View {
+    let item: Overlay.Dragged
+    @ObservedObject var caps: Captures
+
+    var body: some View {
+        VStack(spacing: 6) {
+            if case .window(let w) = item, let img = caps.images[w.id] {
+                Image(img, scale: 1, label: Text(w.app)).resizable().aspectRatio(contentMode: .fit)
+                    .frame(width: 180).clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            Text(item.label).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+        }
+        .padding(8)
+        .frame(maxWidth: 200)
+        .background(RoundedRectangle(cornerRadius: 10).fill(.ultraThinMaterial))
+        .shadow(radius: 8)
     }
 }
 
