@@ -158,7 +158,8 @@ struct SettingsView: View {
             }
             Section {
                 Text("""
-                    hold ⌘⌥ — all desktops · click a desktop to switch, a window to raise
+                    hold ⌘⌥ — all desktops · click a desktop (or one of its windows) to switch · drag to move
+                    ⌘⌥⇥ — cycle desktops, release to switch · ⌘⌥1…9 — switch to desktop N
                     ⌘⇥ — switcher within the current desktop (hold ⌘, ⇥/arrows, release)
                     """)
                     .font(.caption).foregroundStyle(.secondary)
@@ -279,7 +280,7 @@ private struct DesktopRow: View {
                 guard let s = obj as? String else { return }
                 Task { @MainActor in
                     if s.hasPrefix("group:"), let id = UUID(uuidString: String(s.dropFirst(6))) {
-                        Engine.shared.reorder(id, before: g.id)
+                        Engine.shared.reorder(id, onto: g.id)
                     } else if let wid = CGWindowID(s) {
                         Engine.shared.retag(wid, to: g.id)
                     }

@@ -18,12 +18,13 @@ wrong tag, fixed by re-tagging.
     scroll
   - click a desktop card → switch to it: **all** its windows come to the front in the
     stacking order they already had, so it looks exactly as you left it (other desktops'
-    windows show only in the gaps)
-  - hover a window → outline + ✕ close / ⏻ quit buttons; click it → raise it; thumbnails
-    shrink so every window in a desktop always fits
+    windows show only in the gaps). Click one of its windows instead → the same switch,
+    with that window on top
+  - hover a window → outline + ✕ close / ⏻ quit buttons; thumbnails shrink so every
+    window in a desktop always fits
   - **drag a thumbnail onto another desktop** to move it; drag a desktop *header* onto
-    another card to reorder desktops — works with ⌘⌥ still held, and letting go mid-drag
-    keeps the overview up until you drop
+    another card to put it in that card's slot — works with ⌘⌥ still held, and letting go
+    mid-drag keeps the overview up until you drop
   - hover a desktop header → ✏ rename · 🪄 seed (runs the checked seed commands; new
     windows for the next 8s are tagged to it) · 🗑 delete (gracefully closes its windows —
     dirty documents get their save dialog and survive into the current desktop)
@@ -31,7 +32,7 @@ wrong tag, fixed by re-tagging.
 - **⌘⌥⇥** — AltTab for desktops: keep ⌘⌥ held, ⇥/⇧⇥ moves a white cursor between desktop
   cards, release ⌘⌥ to switch to the highlighted one (esc cancels).
 - **⌘⌥1…9** — switch straight to desktop N. With no desktop N the key passes through to
-  the app.
+  the app — so an app's own ⌘⌥N shortcut works only while you have fewer than N desktops.
 - **⌘⇥** — switcher, scoped to the current desktop, live thumbnails. Hold ⌘, press ⇥/⇧⇥
   or arrows to pick, release ⌘ to commit, esc to cancel. Hover gives the same ✕/⏻ buttons.
 - menu bar: desktops (click to jump), Show All Desktops, New Desktop, Seed Current
@@ -99,12 +100,6 @@ dev build into `~/Applications`. Uninstall: `sudo ./uninstall.sh`.
   affects looks, never tracking.
 - **Tags persist** across app restarts (session-fingerprinted so stale IDs can't kidnap
   new windows; reboot starts fresh, by design).
-
-## Requirements
-
-Only **Accessibility** (to raise windows), prompted on first launch. No Screen Recording,
-no display-settings changes, no virtual display. Launch from a terminal that has
-Accessibility.
 
 ## Run
 

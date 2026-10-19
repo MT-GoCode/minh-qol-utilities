@@ -35,6 +35,7 @@ final class Engine {
     private var lastSaved = Data()
     private var signals: [DispatchSourceSignal] = []
     private var seedTarget: (id: UUID, until: Date)?   // new windows adopt here while live
+    private var lastFront: CGWindowID?             // focus-follow fires on a CHANGE of front window
 
     var onChange: (() -> Void)?                    // menu-bar refresh hook
 
@@ -106,13 +107,14 @@ final class Engine {
 
     /// Jump to a group: bring ALL its on-screen windows to the front, in the stacking order
     /// they already have among themselves, so the desktop looks exactly as you left it; other
-    /// desktops' windows show only where it leaves gaps. The top one takes focus. An empty
-    /// group just becomes the adoption target.
-    func jump(to id: UUID) {
+    /// desktops' windows show only where it leaves gaps. The top one — or `top`, a window
+    /// clicked in the overview — takes focus. An empty group just becomes the adoption target.
+    func jump(to id: UUID, top: CGWindowID? = nil) {
         guard groups.contains(where: { $0.id == id }) else { return }
         currentID = id
         var depth: [CGWindowID: Int] = [:]
         for (i, wid) in WindowTruth.stackOrder().enumerated() { depth[wid] = i }
+        if let top { depth[top] = -1 }
         Raise.raiseStack(windowsOf(id).sorted { (depth[$0.id] ?? .max) < (depth[$1.id] ?? .max) })
         persistIfChanged()
         onChange?()
@@ -159,14 +161,6 @@ final class Engine {
         persistIfChanged()
     }
 
-    /// Overlay/switcher clicked a window: raise it and make its group current.
-    func focusWindow(_ wid: CGWindowID) {
-        guard let w = WindowTruth.list().first(where: { $0.id == wid }) else { return }
-        if let g = assign[wid] { currentID = g }
-        Raise.raise(pid: w.pid, wid: w.id)
-        onChange?()
-    }
-
     func closeWindow(_ wid: CGWindowID) {
         guard let w = WindowTruth.list().first(where: { $0.id == wid }) else { return }
         Raise.close(pid: w.pid, wid: w.id)
@@ -198,13 +192,12 @@ final class Engine {
         onChange?()
     }
 
-    /// Reorder desktops (overview drag of a card header onto another card).
-    func reorder(_ dragged: UUID, before target: UUID) {
-        guard dragged != target,
-              let from = groups.firstIndex(where: { $0.id == dragged }) else { return }
-        let item = groups.remove(at: from)
-        let to = groups.firstIndex(where: { $0.id == target }) ?? groups.count
-        groups.insert(item, at: to)
+    /// Reorder desktops: the dragged one takes the target's slot (so every slot, first to
+    /// last, is reachable by dropping on its current occupant).
+    func reorder(_ dragged: UUID, onto target: UUID) {
+        guard let from = groups.firstIndex(where: { $0.id == dragged }),
+              let to = groups.firstIndex(where: { $0.id == target }), from != to else { return }
+        groups.insert(groups.remove(at: from), at: to)
         persistIfChanged()
         onChange?()
     }
@@ -339,8 +332,11 @@ final class Engine {
         }
 
         // Focus-follow: landing on a window of another group (native ⌘⇥ still works,
-        // Dock clicks, notification clicks) makes that group current.
-        if let f = WindowTruth.frontWindowID(), let g = assign[f] {
+        // Dock clicks, notification clicks) makes that group current. Only on a change of front
+        // window — re-asserting every tick would undo a jump to an empty desktop, or one whose
+        // raise the window server hasn't applied yet.
+        if let f = WindowTruth.frontWindowID(), f != lastFront, let g = assign[f] {
+            lastFront = f
             currentID = g
             mru[g] = [f] + (mru[g] ?? []).filter { $0 != f }
         }

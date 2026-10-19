@@ -3,8 +3,9 @@ import SwiftUI
 
 // Hold ⌘⌥ → a full-screen view of every desktop laid out spatially, each showing its
 // windows. Release hides it (peek). It's a NAVIGATOR, not a space switch: nothing on the
-// real screen moves — clicking a desktop just makes it current (and raises its window),
-// clicking a window raises that window. The menu can also pin it open for mouse work.
+// real screen moves — clicking a desktop (or one of its windows) switches to it, raising all
+// its windows in place. ⌘⌥⇥ drives a desktop cursor committed on release. The menu can also
+// pin it open for mouse work.
 @MainActor
 final class Overlay: ObservableObject {
     static let shared = Overlay()
@@ -16,14 +17,17 @@ final class Overlay: ObservableObject {
 
     var isOpen: Bool { panel != nil }
 
+    private static var held: Bool {
+        CGEventSource.flagsState(.combinedSessionState).isSuperset(of: [.maskCommand, .maskAlternate])
+    }
+
     /// ⌘⌥ held: show after a short quiet delay so ⌘⌥+key chords (⌘⌥I, ⌘⌥esc, …) don't
     /// flash it. Re-checks the modifiers are still down when the delay fires.
     func scheduleHeld() {
         guard !isOpen, peek == nil else { return }
         let work = DispatchWorkItem { [weak self] in
             self?.peek = nil
-            guard CGEventSource.flagsState(.combinedSessionState)
-                .isSuperset(of: [.maskCommand, .maskAlternate]) else { return }
+            guard Self.held else { return }
             self?.present(pinned: false)
         }
         peek = work
@@ -34,19 +38,19 @@ final class Overlay: ObservableObject {
     @Published private(set) var selected: UUID?
 
     /// ⌘⌥⇥ / ⌘⌥⇧⇥: open now (no peek delay) and move the cursor, starting from the current
-    /// desktop, wrapping.
+    /// desktop, wrapping. The engine always keeps at least one desktop.
     func cycle(_ delta: Int) {
         peek?.cancel(); peek = nil
         if !isOpen { present(pinned: false) }
         let ids = groups.map(\.id)
-        guard !ids.isEmpty else { return }
         let from = ids.firstIndex(of: selected ?? Engine.shared.currentID) ?? 0
         selected = ids[((from + delta) % ids.count + ids.count) % ids.count]
     }
 
-    /// ⌘⌥ released (or broken): commit a ⌘⌥⇥ selection, otherwise end the peek.
+    /// ⌘⌥ released (or broken): commit a ⌘⌥⇥ selection, otherwise end the peek. A drag in
+    /// flight wins — its drop is what the user is doing.
     func released() {
-        if let s = selected { jump(to: s) } else { dismissPeek() }
+        if let s = selected, drag == nil { jump(to: s) } else { dismissPeek() }
     }
 
     /// Any other key under ⌘⌥ is a chord (⌘⌥I, ⌘⌥esc, …): drop the selection, end the peek.
@@ -75,25 +79,33 @@ final class Overlay: ObservableObject {
         renamingID = nil
         drag = nil
         selected = nil
+        cardFrames = [:]
         Captures.shared.stopIfIdle()
     }
 
+    /// Every engine tick while open. Frozen during a drag: a re-render that drops the dragged
+    /// tile would cancel its gesture without onEnded, stranding `drag`. Also the rescue for a
+    /// ⌘⌥ release the tap never saw (disabled mid-hold) — without it the overview stays up,
+    /// with a cursor the next unrelated modifier would commit.
     func refresh() {
-        guard isOpen else { return }
+        guard isOpen, drag == nil else { return }
+        if !pinned || selected != nil, renamingID == nil, !Self.held { released(); return }
         groups = Engine.shared.view()
     }
 
     // actions from the view
     @Published var renamingID: UUID?
 
-    func jump(to id: UUID) { Engine.shared.jump(to: id); hide() }
-    func focus(_ w: Win) { Engine.shared.focusWindow(w.id); hide() }
+    func jump(to id: UUID, top: CGWindowID? = nil) { Engine.shared.jump(to: id, top: top); hide() }
     func newGroup() { Engine.shared.newGroup(); refresh() }
     func closeWindow(_ w: Win) { Engine.shared.closeWindow(w.id) }
     func killApp(_ w: Win) { Engine.shared.killApp(w.id) }
     func seed(_ id: UUID) { Engine.shared.seed(id) }
     func deleteGroup(_ id: UUID) { Engine.shared.deleteGroup(id); refresh() }
-    func beginRename(_ id: UUID) { renamingID = id }
+
+    /// The panel must be key for the name field to receive typing (non-activating: the app
+    /// you were in stays frontmost).
+    func beginRename(_ id: UUID) { renamingID = id; panel?.makeKey() }
 
     func endRename() {
         renamingID = nil
@@ -125,7 +137,7 @@ final class Overlay: ObservableObject {
         if let item = drag?.item, let target = dropTarget {
             switch item {
             case .window(let w): Engine.shared.retag(w.id, to: target)
-            case .desktop(let g): Engine.shared.reorder(g.id, before: target)
+            case .desktop(let g): Engine.shared.reorder(g.id, onto: target)
             }
         }
         drag = nil
@@ -135,9 +147,7 @@ final class Overlay: ObservableObject {
     /// A rename/drag outlived the ⌘⌥ release: close now unless the keys are back down or
     /// the panel was pinned open.
     private func settle() {
-        let held = CGEventSource.flagsState(.combinedSessionState)
-            .isSuperset(of: [.maskCommand, .maskAlternate])
-        if !pinned, !held { hide() } else { refresh() }
+        if !pinned, !Self.held { hide() } else { refresh() }
     }
 
     func liveRename(_ id: UUID, _ name: String) {
@@ -158,10 +168,15 @@ final class Overlay: ObservableObject {
         Captures.shared.start()
     }
 
+    /// Borderless panels refuse key status by default, which would leave rename deaf.
+    private final class KeyPanel: NSPanel {
+        override var canBecomeKey: Bool { true }
+    }
+
     private static func makePanel() -> NSPanel {
-        let p = NSPanel(contentRect: .zero,
-                        styleMask: [.borderless, .nonactivatingPanel],
-                        backing: .buffered, defer: false)
+        let p = KeyPanel(contentRect: .zero,
+                         styleMask: [.borderless, .nonactivatingPanel],
+                         backing: .buffered, defer: false)
         p.level = .popUpMenu
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         p.backgroundColor = .clear

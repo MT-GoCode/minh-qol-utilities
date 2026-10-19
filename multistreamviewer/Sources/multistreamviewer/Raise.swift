@@ -2,8 +2,8 @@ import AppKit
 
 // Cross-app focus. Public activate() stopped moving key focus across apps in macOS 14,
 // so this uses the SkyLight trio (AltTab/yabai technique). Every private symbol is
-// guard-let'd: if one vanishes in an OS update, raising degrades to the public path
-// instead of crashing. A generation counter kills the stale-retry race: a retry from
+// guard-let'd: if one vanishes in an OS update, raising is left to AXRaise and the retry's
+// public activate() instead of crashing. A generation counter kills the stale-retry race: a retry from
 // switch N never fires after the user has already switched to N+1.
 @MainActor
 enum Raise {
@@ -34,7 +34,10 @@ enum Raise {
               let els = ref as? [AXUIElement] else { return nil }
         for el in els {
             var got: CGWindowID = 0
-            if getWindow(el, &got) == .success, got == wid { return el }
+            if getWindow(el, &got) == .success, got == wid {
+                AXUIElementSetMessagingTimeout(el, 0.3)   // not inherited from the app element
+                return el
+            }
         }
         return nil
     }
@@ -75,16 +78,11 @@ enum Raise {
     static func raise(pid: pid_t, wid: CGWindowID) {
         generation += 1
         let g = generation
-        if let setFront, let postEvent, let psnForPID {
+        bringForward(pid: pid, wid: wid)
+        if let postEvent, let psnForPID {
             var psn = ProcessSerialNumber()
             _ = psnForPID(pid, &psn)
-            _ = setFront(&psn, wid, 0x200)   // userGenerated: front process + this window
             makeKey(&psn, wid, postEvent)
-        } else {
-            NSRunningApplication(processIdentifier: pid)?.activate()
-        }
-        if let el = element(pid: pid, wid: wid) {
-            AXUIElementPerformAction(el, kAXRaiseAction as CFString)
         }
         // Verify focus actually moved; retry once — unless a newer raise superseded us.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {

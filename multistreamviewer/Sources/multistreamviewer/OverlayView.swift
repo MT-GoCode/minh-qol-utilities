@@ -26,7 +26,7 @@ struct OverlayView: View {
                     DragPreview(item: d.item, caps: caps).position(d.at).allowsHitTesting(false)
                 }
             }
-            .coordinateSpace(name: Overlay.space)
+            .coordinateSpace(.named(Overlay.space))
         }
         .ignoresSafeArea()
     }
@@ -73,6 +73,7 @@ private struct DesktopCard: View {
     @ObservedObject var caps: Captures
     @State private var hover = false
     @State private var draft = ""
+    @FocusState private var nameFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -83,13 +84,17 @@ private struct DesktopCard: View {
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(.ultraThinMaterial)
+                .overlay(RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.accentColor.opacity(targeted ? 0.25 : 0)))
                 .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(
-                    (targeted || g.isCurrent) ? Color.accentColor : .white.opacity(0.12),
-                    lineWidth: (targeted || g.isCurrent) ? 2 : 1))
+                    g.isCurrent ? Color.accentColor : .white.opacity(0.12),
+                    lineWidth: g.isCurrent ? 2 : 1))
                 .overlay(RoundedRectangle(cornerRadius: 16)
                     .strokeBorder(.white, lineWidth: 4).opacity(o.selected == g.id ? 1 : 0)))
         .contentShape(Rectangle())
-        .onTapGesture { o.jump(to: g.id) }       // anywhere on the card; tiles' own taps win
+        // Anywhere on the card switches (tiles' own taps win); mid-rename a click just ends
+        // the rename, as the backdrop does.
+        .onTapGesture { o.renamingID == nil ? o.jump(to: g.id) : o.endRename() }
         .onHover { hover = $0 }
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Overlay.space)) } action: {
             o.cardFrames[g.id] = $0
@@ -119,6 +124,8 @@ private struct DesktopCard: View {
                     TextField("name", text: $draft)
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 180)
+                        .focused($nameFocused)
+                        .onAppear { nameFocused = true }
                         .onChange(of: draft) { _, v in
                             if v.count > kMaxDesktopName {
                                 draft = String(v.prefix(kMaxDesktopName))
@@ -162,7 +169,7 @@ private struct DesktopCard: View {
                     ForEach(g.windows) { w in
                         Tile(w: w, image: caps.images[w.id],
                              thumbHeight: max(28, tileH - 30),
-                             onActivate: { o.focus(w) },
+                             onActivate: { o.jump(to: g.id, top: w.id) },
                              onClose: { o.closeWindow(w) },
                              onKill: { o.killApp(w) })
                             .highPriorityGesture(dragging(.window(w)))

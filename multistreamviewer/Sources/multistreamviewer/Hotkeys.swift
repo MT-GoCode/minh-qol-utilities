@@ -1,6 +1,6 @@
 import AppKit
 
-// One CGEvent tap. Two gestures, both harmless — neither ever moves a window:
+// One CGEvent tap. Every gesture is harmless — none ever moves a window:
 //   hold ⌘⌥       → overlay of all desktops in spaced views; release hides.
 //   ⌘⌥ + ⇥/⇧⇥     → cycle a desktop cursor in that overlay; releasing ⌘⌥ jumps there.
 //   ⌘⌥ + 1…9      → jump straight to desktop N (passed through if there is no desktop N).
@@ -8,9 +8,11 @@ import AppKit
 //                   esc cancels. (Replaces native ⌘⇥, scoped to the current group.)
 //
 // Discipline (MSV's root bug, avoided): the callback CLASSIFIES + CONSUMES only; every
-// action dispatches out — never AX inside the tap. The switcher commits ONLY on the ⌘
-// key's own release (keycode 54/55 in flagsChanged); other cmd-less events mid-hold
-// (e.g. Karabiner remaps) must not be read as a release. KeyUp debts are counters with a
+// action dispatches out — never AX inside the tap. Dispatching ALL of them (modifier
+// changes included) to the one main queue also keeps them in key order: a release can't
+// overtake the ⇥ that preceded it. The switcher commits ONLY on the ⌘ key's own release
+// (keycode 54/55 in flagsChanged); other cmd-less events mid-hold (e.g. Karabiner remaps)
+// must not be read as a release. KeyUp debts are counters with a
 // TTL so a lost keyUp can't poison later keystrokes.
 @MainActor
 final class Hotkeys {
@@ -71,7 +73,10 @@ final class Hotkeys {
         CGEvent.tapEnable(tap: tap, enable: true)
     }
 
-    private func consume(_ code: Int64) {
+    /// Auto-repeats get no keyUp of their own, so they owe nothing.
+    private func consume(_ e: CGEvent) {
+        guard e.getIntegerValueField(.keyboardEventAutorepeat) == 0 else { return }
+        let code = e.getIntegerValueField(.keyboardEventKeycode)
         owedKeyUps[code] = ((owedKeyUps[code]?.count ?? 0) + 1, Date())
     }
 
@@ -109,13 +114,16 @@ final class Hotkeys {
         let shift = f.contains(.maskShift)
 
         if type == .flagsChanged {
-            if s.isOpen, !cmd, code == 54 || code == 55 { s.commit() }   // ⌘ released → commit
-            // hold ⌘⌥ (nothing else) → overlay of all desktops; release/break → hide (or
-            // commit a ⌘⌥⇥ selection). ⇧ is allowed while selecting: it's ⌘⌥⇧⇥'s reverse.
-            if cmd, opt, !ctrl, !shift || Overlay.shared.selected != nil, !s.isOpen {
-                Overlay.shared.scheduleHeld()
-            } else {
-                Overlay.shared.released()
+            DispatchQueue.main.async {
+                if s.isOpen, !cmd, code == 54 || code == 55 { s.commit() }   // ⌘ released → commit
+                // hold ⌘⌥ (nothing else) → overlay of all desktops; release/break → hide (or
+                // commit a ⌘⌥⇥ selection). ⇧ is allowed once it's up: it's ⌘⌥⇧⇥'s reverse.
+                let o = Overlay.shared
+                if cmd, opt, !ctrl, !shift || o.isOpen, !s.isOpen {
+                    o.scheduleHeld()
+                } else {
+                    o.released()
+                }
             }
             return pass(event)
         }
@@ -125,26 +133,29 @@ final class Hotkeys {
         guard type == .keyDown else { return pass(event) }
 
         // ⌘⌥ layer: desktop cursor and direct jumps; any other key is a chord (⌘⌥I, ⌘⌥esc, …).
-        if cmd, opt {
+        if cmd, opt, !s.isOpen {
             if !ctrl, code == 48 {                // tab
-                consume(code)
+                consume(event)
                 DispatchQueue.main.async { Overlay.shared.cycle(shift ? -1 : 1) }
                 return nil
             }
             let groups = Engine.shared.groups
             if !ctrl, !shift, let n = Self.digitCodes[code], groups.indices.contains(n - 1) {
-                consume(code)
+                let first = event.getIntegerValueField(.keyboardEventAutorepeat) == 0
+                consume(event)
                 let id = groups[n - 1].id
-                DispatchQueue.main.async { Overlay.shared.jump(to: id) }
+                if first { DispatchQueue.main.async { Overlay.shared.jump(to: id) } }
                 return nil
             }
-            Overlay.shared.chord()
+            DispatchQueue.main.async { Overlay.shared.chord() }
+            // esc as the overview's cancel is swallowed: passed through, ⌘⌥⎋ opens Force Quit.
+            if code == 53, Overlay.shared.isOpen { consume(event); return nil }
         }
 
         // ⌘ layer: the switcher.
         if cmd, !opt, !ctrl {
             if code == 48 {                       // tab
-                consume(code)
+                consume(event)
                 DispatchQueue.main.async {
                     s.isOpen ? s.step(shift ? -1 : 1) : s.open()
                 }
@@ -152,18 +163,18 @@ final class Hotkeys {
             }
             if s.isOpen {
                 switch code {
-                case 123: consume(code); DispatchQueue.main.async { s.arrow(-1, 0) }; return nil
-                case 124: consume(code); DispatchQueue.main.async { s.arrow(1, 0) }; return nil
-                case 125: consume(code); DispatchQueue.main.async { s.arrow(0, 1) }; return nil
-                case 126: consume(code); DispatchQueue.main.async { s.arrow(0, -1) }; return nil
-                case 53: consume(code); DispatchQueue.main.async { s.cancel() }; return nil  // esc
+                case 123: consume(event); DispatchQueue.main.async { s.arrow(-1, 0) }; return nil
+                case 124: consume(event); DispatchQueue.main.async { s.arrow(1, 0) }; return nil
+                case 125: consume(event); DispatchQueue.main.async { s.arrow(0, 1) }; return nil
+                case 126: consume(event); DispatchQueue.main.async { s.arrow(0, -1) }; return nil
+                case 53: consume(event); DispatchQueue.main.async { s.cancel() }; return nil  // esc
                 default: break
                 }
             }
         }
         // esc cancels regardless of modifiers, so a dropped ⌘ can't trap the HUD.
         if s.isOpen, code == 53 {
-            consume(code)
+            consume(event)
             DispatchQueue.main.async { s.cancel() }
             return nil
         }
