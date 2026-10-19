@@ -12,8 +12,8 @@ import AppKit
 // changes included) to the one main queue also keeps them in key order: a release can't
 // overtake the ⇥ that preceded it. The switcher commits ONLY on the ⌘ key's own release
 // (keycode 54/55 in flagsChanged); other cmd-less events mid-hold (e.g. Karabiner remaps)
-// must not be read as a release. KeyUp debts are counters with a
-// TTL so a lost keyUp can't poison later keystrokes.
+// must not be read as a release. KeyUp debts are counters with a TTL so a lost keyUp can't
+// poison later keystrokes.
 @MainActor
 final class Hotkeys {
     static let shared = Hotkeys()
@@ -21,6 +21,7 @@ final class Hotkeys {
     private var owedKeyUps: [Int64: (count: Int, at: Date)] = [:]
     private var lastCreateAttempt = Date.distantPast
     private var disabledStrikes = 0
+    private var cycling = false     // a ⌘⌥⇥ was seen this hold — its overlay may still be queued
 
     /// tap exists AND passed its last health check — so the menu ⚠ shows for a
     /// created-then-dead tap (Accessibility revoked, port death), not just a never-created one.
@@ -114,6 +115,7 @@ final class Hotkeys {
         let shift = f.contains(.maskShift)
 
         if type == .flagsChanged {
+            if !(cmd && opt) { cycling = false }
             DispatchQueue.main.async {
                 if s.isOpen, !cmd, code == 54 || code == 55 { s.commit() }   // ⌘ released → commit
                 // hold ⌘⌥ (nothing else) → overlay of all desktops; release/break → hide (or
@@ -136,6 +138,7 @@ final class Hotkeys {
         if cmd, opt, !s.isOpen {
             if !ctrl, code == 48 {                // tab
                 consume(event)
+                cycling = true
                 DispatchQueue.main.async { Overlay.shared.cycle(shift ? -1 : 1) }
                 return nil
             }
@@ -149,7 +152,7 @@ final class Hotkeys {
             }
             DispatchQueue.main.async { Overlay.shared.chord() }
             // esc as the overview's cancel is swallowed: passed through, ⌘⌥⎋ opens Force Quit.
-            if code == 53, Overlay.shared.isOpen { consume(event); return nil }
+            if code == 53, cycling || Overlay.shared.isOpen { consume(event); return nil }
         }
 
         // ⌘ layer: the switcher.

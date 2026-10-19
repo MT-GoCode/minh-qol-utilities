@@ -84,13 +84,19 @@ final class Overlay: ObservableObject {
     }
 
     /// Every engine tick while open. Frozen during a drag: a re-render that drops the dragged
-    /// tile would cancel its gesture without onEnded, stranding `drag`. Also the rescue for a
-    /// ⌘⌥ release the tap never saw (disabled mid-hold) — without it the overview stays up,
-    /// with a cursor the next unrelated modifier would commit.
+    /// tile would cancel its gesture without onEnded, stranding `drag`.
     func refresh() {
         guard isOpen, drag == nil else { return }
-        if !pinned || selected != nil, renamingID == nil, !Self.held { released(); return }
         groups = Engine.shared.view()
+    }
+
+    /// Every engine tick, degraded ones included: a ⌘⌥ release the tap never saw (disabled
+    /// mid-hold) must not leave the overview up, with a cursor the next unrelated modifier
+    /// would commit.
+    func rescueRelease() {
+        guard isOpen, drag == nil, renamingID == nil, !pinned || selected != nil, !Self.held
+        else { return }
+        released()
     }
 
     // actions from the view
@@ -168,9 +174,10 @@ final class Overlay: ObservableObject {
         Captures.shared.start()
     }
 
-    /// Borderless panels refuse key status by default, which would leave rename deaf.
+    /// Borderless panels refuse key status by default, which would leave rename deaf. Only
+    /// while renaming: any other click must not pull typing away from the user's app.
     private final class KeyPanel: NSPanel {
-        override var canBecomeKey: Bool { true }
+        override var canBecomeKey: Bool { Overlay.shared.renamingID != nil }
     }
 
     private static func makePanel() -> NSPanel {

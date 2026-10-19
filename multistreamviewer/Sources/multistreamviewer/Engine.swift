@@ -302,7 +302,8 @@ final class Engine {
                       collapse.lastRawCount, raw.count)
             }
             collapse = d.state
-            Switcher.shared.rescueStuckCommand()   // the missed-⌘-release rescue must never pause
+            Switcher.shared.rescueStuckCommand()   // the missed-release rescues must never pause
+            Overlay.shared.rescueRelease()
             return
         }
         if d.accepted {
@@ -342,6 +343,7 @@ final class Engine {
         }
 
         Switcher.shared.maintainTick()
+        Overlay.shared.rescueRelease()
         Overlay.shared.refresh()
         SettingsWindow.shared.refresh()
         if !inGrace { persistIfChanged() }
