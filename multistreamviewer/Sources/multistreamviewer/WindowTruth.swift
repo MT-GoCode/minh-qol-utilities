@@ -135,23 +135,24 @@ enum WindowTruth {
         guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
         else { return nil }
         let mine = Set(list().lazy.filter { $0.pid == pid }.map(\.id))
-        let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
-            as? [[String: Any]] ?? []
-        for w in info
-        where (w[kCGWindowLayer as String] as? Int) == 0
-            && (w[kCGWindowOwnerPID as String] as? pid_t) == pid {
-            if let wid = w[kCGWindowNumber as String] as? CGWindowID, mine.contains(wid) {
-                return wid
-            }
-        }
-        return nil
+        return stackOrder().first(where: mine.contains)
     }
 
-    /// On-screen window ids, front to back (CGWindowList's documented order).
+    /// On-screen layer-0 (ordinary app) window ids, front to back (CGWindowList's documented
+    /// order).
     static func stackOrder() -> [CGWindowID] {
         let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
             as? [[String: Any]] ?? []
-        return info.compactMap { $0[kCGWindowNumber as String] as? CGWindowID }
+        return info.compactMap {
+            ($0[kCGWindowLayer as String] as? Int) == 0 ? $0[kCGWindowNumber as String] as? CGWindowID : nil
+        }
+    }
+
+    /// The topmost real window (furniture like a find bar skipped).
+    @MainActor
+    static func topWindowID() -> CGWindowID? {
+        let real = Set(list().map(\.id))
+        return stackOrder().first(where: real.contains)
     }
 
     /// `multistreamviewer windows` — every on-screen candidate and whether the switcher takes it. The

@@ -54,13 +54,51 @@ enum Raise {
         NSRunningApplication(processIdentifier: pid)?.terminate()
     }
 
+    private static var stackGeneration = 0
+    private static let stackPoll = 0.01      // s between top-of-stack checks; well under a frame
+    private static let stackPatience = 0.5   // s one window may take to reach the top before we log + move on
+
     /// Bring a desktop's windows to the front as one block, keeping their stacking among
-    /// themselves. `front` is front-to-back; each window is raised over everything, back
-    /// first, so the last (frontmost) one lands on top and takes focus.
-    static func raiseStack(_ front: [Win]) {
-        guard let top = front.first else { return }
-        for w in front.dropFirst().reversed() { bringForward(pid: w.pid, wid: w.id) }
-        raise(pid: top.pid, wid: top.id)
+    /// themselves. `front` is front-to-back. Strictly one window at a time, back first: each
+    /// is fully raised (front process + key window + AXRaise) and we WAIT until the window
+    /// server shows it on top before touching the next. Apps activate asynchronously, so firing
+    /// them all at once lets a slow app land last and bury the rest; making each window its
+    /// app's key window stops activation from re-fronting a different window of that app.
+    /// A newer call abandons an older one. `done` runs when the last window is up.
+    static func raiseStack(_ front: [Win], done: @escaping () -> Void) {
+        stackGeneration += 1
+        let g = stackGeneration
+        var queue = Array(front.reversed())
+        var deadline = Date()
+        func next() {
+            guard g == stackGeneration else { return }
+            guard let w = queue.first else { verify(front); done(); return }
+            raise(pid: w.pid, wid: w.id)
+            deadline = Date().addingTimeInterval(stackPatience)
+            poll()
+        }
+        func poll() {
+            guard g == stackGeneration, let w = queue.first else { return }
+            let up = WindowTruth.topWindowID() == w.id
+            if !up, Date() < deadline {
+                DispatchQueue.main.asyncAfter(deadline: .now() + stackPoll) { poll() }
+                return
+            }
+            if !up { NSLog("multistreamviewer: raise — %d (%@) not on top after %.1fs", w.id, w.app, stackPatience) }
+            queue.removeFirst()
+            next()
+        }
+        next()
+    }
+
+    /// Logs when the finished stack differs from the one asked for, so an ordering bug is
+    /// visible in Console instead of silently "looking a bit off".
+    private static func verify(_ front: [Win]) {
+        let want = Set(front.map(\.id))
+        let got = WindowTruth.stackOrder().filter(want.contains)
+        if got != front.map(\.id) {
+            NSLog("multistreamviewer: raise — wanted %@ got %@", "\(front.map(\.id))", "\(got)")
+        }
     }
 
     /// This one window over every other app's, without making it key.

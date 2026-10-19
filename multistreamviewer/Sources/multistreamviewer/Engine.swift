@@ -115,7 +115,12 @@ final class Engine {
         var depth: [CGWindowID: Int] = [:]
         for (i, wid) in WindowTruth.stackOrder().enumerated() { depth[wid] = i }
         if let top { depth[top] = -1 }
-        Raise.raiseStack(windowsOf(id).sorted { (depth[$0.id] ?? .max) < (depth[$1.id] ?? .max) })
+        // Re-assert at the end: mid-stack, a transient front window could have tripped focus-follow.
+        Raise.raiseStack(windowsOf(id).sorted { (depth[$0.id] ?? .max) < (depth[$1.id] ?? .max) }) {
+            self.currentID = id
+            self.lastFront = WindowTruth.frontWindowID()
+            self.onChange?()
+        }
         persistIfChanged()
         onChange?()
     }
