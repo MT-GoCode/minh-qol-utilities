@@ -109,17 +109,23 @@ const saveMappings = () => writeJson(MAPPINGS_FILE, mappings);
 
 // ---------------------------------------------------------------- shared helpers
 
+// Only a missing file means "absent". Anything else — typically macOS privacy (TCC) denying a
+// launchd-run node access to Chrome's folder — must surface, or it reads as "not installed".
+function readChromeJson(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
+  catch (e) {
+    if (e.code === 'ENOENT') return null;
+    throw new Error(`cannot read ${file}: ${e.code || e.message} — if EPERM, grant Full Disk Access to ${process.execPath}`);
+  }
+}
+
 function installedProfiles() {
-  const ls = readJson(path.join(CHROME_DIR, 'Local State'), null, 'Chrome Local State');
+  const ls = readChromeJson(path.join(CHROME_DIR, 'Local State'));
   const cache = (ls && ls.profile && ls.profile.info_cache) || {};
   const out = [];
   for (const [dir, info] of Object.entries(cache)) {
-    let installed = false;
-    try {
-      const sp = JSON.parse(fs.readFileSync(path.join(CHROME_DIR, dir, 'Secure Preferences'), 'utf8'));
-      installed = !!(sp.extensions && sp.extensions.settings && sp.extensions.settings[EXT_ID]);
-    } catch {}
-    if (installed) out.push({ dir, name: info.name || dir });
+    const sp = readChromeJson(path.join(CHROME_DIR, dir, 'Secure Preferences'));
+    if (sp && sp.extensions && sp.extensions.settings && sp.extensions.settings[EXT_ID]) out.push({ dir, name: info.name || dir });
   }
   return out;
 }
@@ -695,14 +701,15 @@ function syncPlaywright(dir, liveSlugs) {
 // ---------------------------------------------------------------- profile readiness
 
 async function ensureProfileReady(dir) {
-  // One scan, not two: each call re-reads Chrome's Local State plus every profile's multi-MB
-  // Secure Preferences.
+  // A live connection mapped to this dir is itself proof of install; Chrome's files are read only
+  // to decide whether a cold launch can succeed. One scan: each call re-reads Local State plus
+  // every profile's multi-MB Secure Preferences.
+  const live = liveIdFor(dir);
+  if (live) return { id: live, launchTabId: null, coldLaunched: false };
   const profs = installedProfiles();
   if (!profs.some((p) => p.dir === dir)) {
     throw new Error(`profile '${dir}' doesn't have the browser-blitz extension installed (installed in: ${profs.map((p) => p.dir).join(', ') || 'none'})`);
   }
-  const live = liveIdFor(dir);
-  if (live) return { id: live, launchTabId: null, coldLaunched: false };
 
   const token = 'bb' + Math.random().toString(36).slice(2, 10);
   log('◆ launching', { dir, token });
