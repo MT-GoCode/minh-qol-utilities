@@ -11,6 +11,7 @@ final class UnitResumeTests: XCTestCase {
             (541, 541, 0),     // finished
             (600, 541, 0),     // beyond the end (stale file state)
             (-3, 541, 0),
+            (3, 4, 0),         // a video shorter than the margin always restarts
         ]
         for c in cases { XCTAssertEqual(ResumePolicy.startPosition(saved: c.saved, duration: c.duration), c.expected, "\(c.saved) of \(c.duration)") }
     }

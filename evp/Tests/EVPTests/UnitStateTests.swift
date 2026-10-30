@@ -78,6 +78,14 @@ final class UnitStateTests: XCTestCase {
         XCTAssertEqual(state.version, State.currentVersion)
     }
 
+    func testAWindowWithoutIdOrBarFlagGainsDefaults() throws {
+        let old = Data(#"{"windows":[{"path":"/media/a.mkv","frame":{"x":1,"y":2,"width":3,"height":4}}]}"#.utf8)
+        let windows = try JSONDecoder().decode(State.self, from: old).windows
+        XCTAssertEqual(windows.map(\.path), ["/media/a.mkv"])
+        XCTAssertEqual(windows.map(\.barHidden), [false])
+        XCTAssertEqual(Set(windows.map(\.id)).count, 1)
+    }
+
     func testAFileFromANewerVersionIsRefusedNotTruncated() {
         let newer = Data(#"{"version":\#(State.currentVersion + 1),"files":{}}"#.utf8)
         XCTAssertThrowsError(try JSONDecoder().decode(State.self, from: newer))
