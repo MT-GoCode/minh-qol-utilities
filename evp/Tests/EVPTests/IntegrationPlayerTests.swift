@@ -99,8 +99,10 @@ final class IntegrationPlayerTests: XCTestCase {
         try s.waitFor(.speed(1.3))
         try s.player.setVolume(60)
         try s.waitFor(.volume(60))
+        try s.waitFor(.endOfFile(false))  // mpv reports the initial value first; only a later true is the real end
+        let mark = s.events.count
         try s.player.seek(toFraction: 0.99)
-        try s.waitFor(.endOfFile(true))
+        try s.waitFor(.endOfFile(true), after: mark)
     }
 
     func testTrackListAndSelection() throws {
