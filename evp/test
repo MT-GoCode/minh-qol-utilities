@@ -4,7 +4,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 missing=0
-for tool in swift ffmpeg pkg-config; do command -v "$tool" >/dev/null || { echo "missing: $tool (brew install ${tool/pkg-config/pkgconf} )"; missing=1; }; done
+command -v swift >/dev/null || { echo "missing: swift (install Xcode or the Command Line Tools)"; missing=1; }
+command -v ffmpeg >/dev/null || { echo "missing: ffmpeg (brew install ffmpeg)"; missing=1; }
+command -v pkg-config >/dev/null || { echo "missing: pkg-config (brew install pkgconf)"; missing=1; }
 pkg-config --exists mpv 2>/dev/null || { echo "missing: libmpv (brew install mpv)"; missing=1; }
 [ "$missing" -eq 0 ] || exit 1
 Tools/make-fixtures
@@ -12,4 +14,3 @@ Tools/make-fixtures
 RUN="results/$(date +%Y%m%d-%H%M%S)-$$"
 mkdir -p "$RUN"
 swift test --parallel --xunit-output "$RUN/xunit.xml" "$@" 2>&1 | tee "$RUN/log.txt"
-exit "${PIPESTATUS[0]}"

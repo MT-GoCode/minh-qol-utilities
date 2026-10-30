@@ -16,6 +16,27 @@ public final class MpvPlayer {
         case paused(Bool)
     }
 
+    /// Every observed property: the tag sent to mpv, its name and its wire format, in one place so observing
+    /// and decoding cannot disagree. A new case is a compile error in `drain` until it is handled.
+    private enum Observed: UInt64, CaseIterable {
+        case time = 1, duration, paused
+
+        var name: String {
+            switch self {
+            case .time: return "time-pos"
+            case .duration: return "duration"
+            case .paused: return "pause"
+            }
+        }
+
+        var format: mpv_format {
+            switch self {
+            case .time, .duration: return MPV_FORMAT_DOUBLE
+            case .paused: return MPV_FORMAT_FLAG
+            }
+        }
+    }
+
     public var onEvent: ((Event) -> Void)?
     private let handle: OpaquePointer
     private let wake: Unmanaged<WakeBox>
@@ -31,6 +52,8 @@ public final class MpvPlayer {
         handle = h
         wake = Unmanaged.passRetained(WakeBox())
         wake.takeUnretainedValue().player = self
+        // keep-open: at the end of a file mpv pauses on the last frame instead of unloading it, so position and
+        // duration stay readable and no end-of-file event fires; the resume rule near the end relies on this.
         let options = [("vo", "null"), ("ao", "null"), ("hwdec", "auto-safe"), ("keep-open", "yes"), ("input-media-keys", "no")]
         for (name, value) in options { try Self.check(mpv_set_option_string(h, name, value)) }
         try Self.check(mpv_initialize(h))
@@ -40,9 +63,9 @@ public final class MpvPlayer {
             let box = Unmanaged<WakeBox>.fromOpaque(ctx!).takeUnretainedValue()
             DispatchQueue.main.async { box.player?.drain() }
         }, wake.toOpaque())
-        try Self.check(mpv_observe_property(h, 0, "time-pos", MPV_FORMAT_DOUBLE))
-        try Self.check(mpv_observe_property(h, 0, "duration", MPV_FORMAT_DOUBLE))
-        try Self.check(mpv_observe_property(h, 0, "pause", MPV_FORMAT_FLAG))
+        for observed in Observed.allCases {
+            try Self.check(mpv_observe_property(h, observed.rawValue, observed.name, observed.format))
+        }
     }
 
     deinit {
@@ -53,10 +76,15 @@ public final class MpvPlayer {
 
     public func load(_ url: URL) throws { try command(["loadfile", url.path]) }
 
-    public func property(_ name: String) -> String? {
-        guard let c = mpv_get_property_string(handle, name) else { return nil }
-        defer { mpv_free(c) }
-        return String(cString: c)
+    /// The property as text; nil only when mpv reports it unavailable (for example no video stream).
+    /// Any other failure, such as a misspelled name, throws.
+    public func property(_ name: String) throws -> String? {
+        var text: UnsafeMutablePointer<CChar>?
+        let code = mpv_get_property(handle, name, MPV_FORMAT_STRING, &text)
+        if code == MPV_ERROR_PROPERTY_UNAVAILABLE.rawValue { return nil }
+        try Self.check(code)
+        defer { mpv_free(text) }
+        return String(cString: text!)
     }
 
     private static func check(_ code: Int32) throws {
@@ -81,13 +109,15 @@ public final class MpvPlayer {
                 let end = event.data.assumingMemoryBound(to: mpv_event_end_file.self).pointee
                 if end.reason == MPV_END_FILE_REASON_ERROR { onEvent?(.loadFailed(MpvError(code: end.error))) }
             case MPV_EVENT_PROPERTY_CHANGE:
+                guard let observed = Observed(rawValue: event.reply_userdata) else {
+                    preconditionFailure("property change with unknown tag \(event.reply_userdata)")
+                }
                 let p = event.data.assumingMemoryBound(to: mpv_event_property.self).pointee
                 guard let data = p.data else { continue }
-                switch String(cString: p.name) {
-                case "time-pos": onEvent?(.time(data.assumingMemoryBound(to: Double.self).pointee))
-                case "duration": onEvent?(.duration(data.assumingMemoryBound(to: Double.self).pointee))
-                case "pause": onEvent?(.paused(data.assumingMemoryBound(to: Int32.self).pointee != 0))
-                default: break
+                switch observed {
+                case .time: onEvent?(.time(data.assumingMemoryBound(to: Double.self).pointee))
+                case .duration: onEvent?(.duration(data.assumingMemoryBound(to: Double.self).pointee))
+                case .paused: onEvent?(.paused(data.assumingMemoryBound(to: Int32.self).pointee != 0))
                 }
             default:
                 break

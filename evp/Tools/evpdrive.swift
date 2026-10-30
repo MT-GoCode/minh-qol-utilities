@@ -22,7 +22,14 @@ func int(_ text: String) -> Int {
     return value
 }
 
-func postKey(target: String, chord: String, count: Int) {
+enum Target {
+    case hid
+    case pid(pid_t)
+}
+
+func parseTarget(_ text: String) -> Target { text == "hid" ? .hid : .pid(pid_t(int(text))) }
+
+func postKey(target: Target, chord: String, count: Int) {
     let parts = chord.split(separator: "+").map(String.init)
     guard let name = parts.last, let code = codes[name] else { fail("unknown key in chord \(chord)") }
     var flags = CGEventFlags()
@@ -35,9 +42,12 @@ func postKey(target: String, chord: String, count: Int) {
             let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)!
             event.flags = flags
             if i > 0 && down { event.setIntegerValueField(.keyboardEventAutorepeat, value: 1) }
-            if target == "hid" { event.post(tap: .cghidEventTap) } else { event.postToPid(pid_t(int(target))) }
+            switch target {
+            case .hid: event.post(tap: .cghidEventTap)
+            case .pid(let pid): event.postToPid(pid)
+            }
         }
-        usleep(30_000)  // about one macOS key-repeat interval
+        usleep(30_000)  // the fastest macOS key-repeat setting
     }
 }
 
@@ -73,7 +83,7 @@ let args = Array(CommandLine.arguments.dropFirst())
 switch args.first {
 case "windows" where args.count == 2: listWindows(pid: pid_t(int(args[1])))
 case "snapshot" where args.count == 3: snapshot(window: int(args[1]), to: args[2])
-case "key" where args.count >= 3: postKey(target: args[1], chord: args[2], count: args.count > 3 ? int(args[3]) : 1)
+case "key" where args.count >= 3: postKey(target: parseTarget(args[1]), chord: args[2], count: args.count > 3 ? int(args[3]) : 1)
 case "media" where args.count >= 2: args.dropFirst().forEach { postMedia(int($0)) }
 default: fail("usage: evpdrive windows <pid> | snapshot <window id> <png> | key <pid|hid> <chord> [n] | media <code>...")
 }

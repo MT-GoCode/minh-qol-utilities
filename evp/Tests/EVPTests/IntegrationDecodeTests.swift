@@ -14,40 +14,53 @@ final class IntegrationDecodeTests: XCTestCase {
         let audioCodec: String
     }
 
-    private func fixtureURL(_ name: String) -> URL {
-        URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    private struct Failure: Error, CustomStringConvertible { let description: String }
+
+    private func fixtureURL(_ name: String) throws -> URL {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent(".fixtures/\(name)")
+        guard FileManager.default.fileExists(atPath: url.path) else { throw Failure(description: "\(name) missing: run ./test, which generates fixtures") }
+        return url
     }
 
-    /// Plays headless until position passes 1 s; returns the player and the duration it reported.
-    private func playUntilAdvancing(_ name: String) throws -> (MpvPlayer, Double) {
-        let url = fixtureURL(name)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), "\(name) missing: run ./test, which generates fixtures")
+    private func wait(for expectation: XCTestExpectation) throws {
+        guard XCTWaiter().wait(for: [expectation], timeout: startupTimeout) == .completed else {
+            throw Failure(description: "timed out after \(startupTimeout) s: \(expectation.expectationDescription)")
+        }
+    }
+
+    /// Plays headless until position passes 1 s; returns the player, the reported duration and every event seen.
+    private func playUntilAdvancing(_ name: String) throws -> (MpvPlayer, Double, [MpvPlayer.Event]) {
         let player = try MpvPlayer()
         let advanced = expectation(description: "position passed 1 s in \(name)")
         var duration = 0.0
+        var events: [MpvPlayer.Event] = []
         var done = false
         player.onEvent = { event in
+            events.append(event)
             switch event {
             case .duration(let d): duration = d
             case .time(let t) where t > 1 && !done: done = true; advanced.fulfill()
             default: break
             }
         }
-        try player.load(url)
-        wait(for: [advanced], timeout: startupTimeout)
-        return (player, duration)
+        try player.load(try fixtureURL(name))
+        try wait(for: advanced)
+        return (player, duration, events)
     }
 
     private func assertDecodes(_ fixture: Fixture) throws {
-        let (player, duration) = try playUntilAdvancing(fixture.name)
+        let (player, duration, events) = try playUntilAdvancing(fixture.name)
         XCTAssertEqual(duration, fixtureDuration, accuracy: 0.1, fixture.name)
-        XCTAssertEqual(player.property("video-format"), fixture.videoFormat, "\(fixture.name) video codec")
-        XCTAssertEqual(player.property("audio-codec-name"), fixture.audioCodec, "\(fixture.name) audio codec")
+        XCTAssertEqual(try player.property("video-format"), fixture.videoFormat, "\(fixture.name) video codec")
+        XCTAssertEqual(try player.property("audio-codec-name"), fixture.audioCodec, "\(fixture.name) audio codec")
         if fixture.videoFormat != nil {
-            let frames = Int(player.property("estimated-frame-number") ?? "") ?? 0
+            let frames = Int(try player.property("estimated-frame-number") ?? "") ?? 0
             XCTAssertGreaterThan(frames, 0, "\(fixture.name) decoded no video frames")
         }
+        XCTAssertTrue(events.contains(.fileLoaded), "\(fixture.name) never reported fileLoaded")
+        XCTAssertTrue(events.contains(.paused(false)), "\(fixture.name) never reported its pause state")
+        XCTAssertFalse(events.contains { if case .loadFailed = $0 { return true } else { return false } }, "\(fixture.name) reported a load failure")
     }
 
     func testMp4() throws { try assertDecodes(Fixture(name: "t.mp4", videoFormat: "h264", audioCodec: "aac")) }
@@ -58,8 +71,13 @@ final class IntegrationDecodeTests: XCTestCase {
 
     /// Headless has no GPU surface to share, so mpv picks the copy-back VideoToolbox variant.
     func testH264UsesHardwareDecode() throws {
-        let (player, _) = try playUntilAdvancing("t.mp4")
-        XCTAssertEqual(player.property("hwdec-current"), "videotoolbox-copy")
+        let (player, _, _) = try playUntilAdvancing("t.mp4")
+        XCTAssertEqual(try player.property("hwdec-current"), "videotoolbox-copy")
+    }
+
+    func testMisspelledPropertyThrows() throws {
+        let player = try MpvPlayer()
+        XCTAssertThrowsError(try player.property("no-such-property"))
     }
 
     func testUnrecognisedFileReportsLoadFailure() throws {
@@ -73,7 +91,7 @@ final class IntegrationDecodeTests: XCTestCase {
             if case .loadFailed(let error) = event { reason = error.description; failed.fulfill() }
         }
         try player.load(corrupt)
-        wait(for: [failed], timeout: startupTimeout)
+        try wait(for: failed)
         XCTAssertEqual(reason, "unrecognized file format")
     }
 }
