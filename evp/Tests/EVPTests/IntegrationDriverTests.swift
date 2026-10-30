@@ -5,6 +5,7 @@ final class IntegrationDriverTests: XCTestCase {
     func testWindowsOfMissingProcessFailsLoudly() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let driver = Process()
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: root.appendingPathComponent(".build/evpdrive").path), "evpdrive is built by ./test: run ./test")
         driver.executableURL = root.appendingPathComponent(".build/evpdrive")
         driver.arguments = ["windows", "999999"]
         let stderr = Pipe()
