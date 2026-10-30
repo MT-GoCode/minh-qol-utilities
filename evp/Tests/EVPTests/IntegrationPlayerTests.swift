@@ -91,11 +91,24 @@ final class IntegrationPlayerTests: XCTestCase {
         try s.waitForPosition(near: 5, within: 0.01)
     }
 
+    func testEachObservedPropertyReportsItsOwnValue() throws {
+        let s = try Session(loading: "t.mp4")
+        try s.until("duration reported as 20 s") { s.events.contains { if case .duration(let d) = $0 { return abs(d - 20) < 0.1 } else { return false } } }
+        try s.until("time advancing past 1 s") { s.events.contains { if case .time(let t) = $0 { return t > 1 } else { return false } } }
+        try s.player.setSpeed(1.3)
+        try s.waitFor(.speed(1.3))
+        try s.player.setVolume(60)
+        try s.waitFor(.volume(60))
+        try s.player.seek(toFraction: 0.99)
+        try s.waitFor(.endOfFile(true))
+    }
+
     func testTrackListAndSelection() throws {
         let s = try Session(loading: "t2.mkv")
         let audio = try s.player.tracks().filter { $0.kind == .audio }
         XCTAssertEqual(audio.map(\.id), [1, 2])
         XCTAssertEqual(audio.map(\.selected), [true, false])
+        XCTAssertEqual(audio.map(\.language), ["eng", "fra"])
         try s.player.select(.audio, id: 2)
         XCTAssertEqual(try s.player.property("aid"), "2")
         XCTAssertEqual(try s.player.tracks().filter { $0.kind == .audio }.map(\.selected), [false, true])

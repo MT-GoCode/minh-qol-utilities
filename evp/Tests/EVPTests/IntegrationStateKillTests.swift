@@ -17,9 +17,10 @@ final class IntegrationStateKillTests: XCTestCase {
             process.arguments = [directory.path]
             do { try process.run() } catch { failures.lock(); problems.append("\(iteration): \(error)"); failures.unlock(); return }
             // Kill only once the first complete file exists, so the kill always lands among later rewrites.
+            // 10 s is far above the first write (about 50 ms) and only guards against a writer that never starts.
             let deadline = Date().addingTimeInterval(10)
             while !FileManager.default.fileExists(atPath: file.path), Date() < deadline { usleep(1000) }
-            usleep(UInt32.random(in: 0...20_000))
+            usleep(UInt32.random(in: 0...20_000))  // spread kills across the length of a rewrite (about 10 ms)
             kill(process.processIdentifier, SIGKILL)
             process.waitUntilExit()
             do {

@@ -22,6 +22,7 @@ public struct KeyChord: Hashable, Codable, CustomStringConvertible {
 
     public init?(key: String, modifiers: Modifiers = []) {
         let isCharacter = key.count == 1 && key != "+" && key == key.lowercased()
+            && key.unicodeScalars.allSatisfy { !CharacterSet.whitespacesAndNewlines.contains($0) && !CharacterSet.controlCharacters.contains($0) }
         guard isCharacter || Self.namedKeys.contains(key) else { return nil }
         self.key = key
         self.modifiers = modifiers

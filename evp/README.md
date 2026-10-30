@@ -17,7 +17,8 @@ Requires `swift`, `pkgconf`, `mpv` and (tests only) `ffmpeg`, all from Homebrew;
 | path | role |
 | :- | :- |
 | `Sources/CMpv` | system-library module over Homebrew's libmpv headers |
-| `Sources/EVPCore` | everything that does not touch the UI, starting with `MpvPlayer` |
-| `Tests/EVPTests` | the one test suite (`Integration*`, later `Unit*` and `E2E*`) |
+| `Sources/EVPCore` | everything that does not touch the UI: `MpvPlayer`, `Action`, `Keymap`, `Settings`, `StateStore`, `ResumePolicy`, `TimeFormat` |
+| `Sources/EVPStateStress` | test-only writer that the kill -9 durability test starts and kills; not part of the app build |
+| `Tests/EVPTests` | the one test suite (`Unit*`, `Integration*`, later `E2E*`) |
 | `Tools/make-fixtures` | generates the test media into `.fixtures/` |
 | `Tools/evpdrive.swift` | synthetic key and media-key input, window list and snapshot; built by `./test`, input and snapshot run via `rac exec` |

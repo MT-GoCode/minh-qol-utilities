@@ -15,7 +15,7 @@ final class UnitStateTests: XCTestCase {
     private func sample() -> State {
         var state = State()
         state.files["/media/a.mkv"] = FileState(position: 292.5, speed: 1.3, volume: 60)
-        state.windows = [WindowState(path: "/media/a.mkv", frame: Frame(x: 10, y: 20, width: 800, height: 450), barHidden: true)]
+        state.windows = [WindowState(id: UUID(), path: "/media/a.mkv", frame: Frame(x: 10, y: 20, width: 800, height: 450), barHidden: true)]
         state.recents = ["/media/a.mkv", "/media/b.mp4"]
         state.settings.seekShortSeconds = 7
         state.settings.decoupleMediaKeys = true
@@ -31,16 +31,63 @@ final class UnitStateTests: XCTestCase {
         XCTAssertEqual(try store(directory).state, expected)
     }
 
-    func testChangesReachDiskWithinTheFlushIntervalButNotBefore() throws {
+    private func secondsUntilFileExists(_ file: URL, timeout: TimeInterval) -> TimeInterval? {
+        let start = Date()
+        while !FileManager.default.fileExists(atPath: file.path) {
+            guard Date().timeIntervalSince(start) < timeout else { return nil }
+            RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.005))
+        }
+        return Date().timeIntervalSince(start)
+    }
+
+    func testAChangeReachesDiskAfterTheIntervalAndNotMuchLater() throws {
         let directory = try temporaryDirectory()
         let file = directory.appendingPathComponent("state.json")
-        let writer = try store(directory, flushInterval: 0.2)
+        let interval = 0.3
+        let writer = try store(directory, flushInterval: interval)
         writer.update { $0.recents = ["/media/a.mkv"] }
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path), "written before the interval elapsed")
-        let deadline = Date().addingTimeInterval(2)
-        while !FileManager.default.fileExists(atPath: file.path), Date() < deadline {
-            RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.01))
+        let elapsed = try XCTUnwrap(secondsUntilFileExists(file, timeout: 3), "never written")
+        XCTAssertGreaterThanOrEqual(elapsed, interval * 0.8)
+        XCTAssertLessThan(elapsed, interval * 3, "flush lagged far behind the interval")
+        XCTAssertEqual(try store(directory).state.recents, ["/media/a.mkv"])
+    }
+
+    func testASteadyStreamOfChangesStillFlushesEveryInterval() throws {
+        // Playback updates the position every frame: a debounce that waits for quiet would never save it.
+        let directory = try temporaryDirectory()
+        let file = directory.appendingPathComponent("state.json")
+        let writer = try store(directory, flushInterval: 0.3)
+        let start = Date()
+        var existedMidStream = false
+        while Date().timeIntervalSince(start) < 1.5 {
+            writer.update { $0.recents = ["\(Date().timeIntervalSince(start))"] }
+            RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.02))
+            if Date().timeIntervalSince(start) > 0.9 { existedMidStream = existedMidStream || FileManager.default.fileExists(atPath: file.path) }
         }
+        XCTAssertTrue(existedMidStream, "no flush while changes kept arriving")
+    }
+
+    func testOlderStateFilesKeepTheirDataAndGainDefaults() throws {
+        let old = Data(#"{"files":{"/media/a.mkv":{"position":5,"speed":1,"volume":50}},"settings":{"seekShortSeconds":7}}"#.utf8)
+        let state = try JSONDecoder().decode(State.self, from: old)
+        XCTAssertEqual(state.files["/media/a.mkv"]?.position, 5)
+        XCTAssertEqual(state.settings.seekShortSeconds, 7)
+        XCTAssertEqual(state.settings.seekLongSeconds, 10, "a setting missing from the file takes its default")
+        XCTAssertEqual(state.recents, [])
+        XCTAssertEqual(state.version, State.currentVersion)
+    }
+
+    func testAFileFromANewerVersionIsRefusedNotTruncated() {
+        let newer = Data(#"{"version":\#(State.currentVersion + 1),"files":{}}"#.utf8)
+        XCTAssertThrowsError(try JSONDecoder().decode(State.self, from: newer))
+    }
+
+    func testAStoreFlushesWhatIsPendingWhenItIsReleased() throws {
+        let directory = try temporaryDirectory()
+        var writer: StateStore? = try store(directory, flushInterval: 60)
+        writer?.update { $0.recents = ["/media/a.mkv"] }
+        writer = nil
         XCTAssertEqual(try store(directory).state.recents, ["/media/a.mkv"])
     }
 

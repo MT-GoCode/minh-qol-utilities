@@ -37,22 +37,25 @@ public struct Keymap: Equatable {
     public mutating func unbind(_ action: Action) { chords[action] = nil }
 }
 
+/// Stored as one entry per action, `null` meaning the user unbound it. An action missing from the file (added by a
+/// newer version) takes its default chord unless another action already holds it; names of removed actions are ignored.
 extension Keymap: Codable {
     public init(from decoder: Decoder) throws {
-        let stored = try decoder.singleValueContainer().decode([String: KeyChord].self)
+        let stored = try decoder.singleValueContainer().decode([String: KeyChord?].self)
         self.init(chords: [:])
         for (name, chord) in stored {
-            guard let action = Action(rawValue: name) else {
-                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "unknown action \(name)"))
-            }
+            guard let action = Action(rawValue: name), let chord else { continue }
             do { try bind(chord, to: action) } catch let conflict as Conflict {
                 throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "\(chord) bound to \(action) and \(conflict.existing)"))
             }
+        }
+        for action in Action.allCases where stored[action.rawValue] == nil {
+            if let chord = Keymap.defaults.chords[action], self.action(for: chord) == nil { chords[action] = chord }
         }
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
-        try container.encode(Dictionary(uniqueKeysWithValues: chords.map { ($0.key.rawValue, $0.value) }))
+        try container.encode(Dictionary(uniqueKeysWithValues: Action.allCases.map { ($0.rawValue, chords[$0]) }))
     }
 }

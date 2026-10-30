@@ -33,6 +33,13 @@ public enum TimeFormat {
         let numbers = parts.compactMap { Int($0) }
         // Every field after the first is minutes or seconds.
         guard numbers.count == parts.count, numbers.dropFirst().allSatisfy({ $0 < 60 }) else { return nil }
-        return Double(numbers.reduce(0) { $0 * 60 + $1 })
+        var total = 0
+        for number in numbers {
+            let (scaled, scaleOverflow) = total.multipliedReportingOverflow(by: 60)
+            let (sum, sumOverflow) = scaled.addingReportingOverflow(number)
+            if scaleOverflow || sumOverflow { return nil }
+            total = sum
+        }
+        return Double(total)
     }
 }

@@ -18,7 +18,7 @@ final class UnitKeymapTests: XCTestCase {
         XCTAssertEqual(KeyChord("shift+ctrl+j")?.description, "ctrl+shift+j")
         XCTAssertEqual(KeyChord("cmd+alt+shift+ctrl+space")?.description, "ctrl+alt+shift+cmd+space")
         XCTAssertEqual(KeyChord(",")?.key, ",")
-        for text in ["", "ctrl+", "+", "J", "ctrl+J", "ctrl+ctrl+j", "meta+j", "enter", "jj", "ctrl++"] {
+        for text in ["", "ctrl+", "+", "J", "ctrl+J", "ctrl+ctrl+j", "meta+j", "enter", "jj", "ctrl++", " ", "\t", "\n", "ctrl+ "] {
             XCTAssertNil(KeyChord(text), text)
         }
     }
@@ -51,12 +51,28 @@ final class UnitKeymapTests: XCTestCase {
     }
 
     func testCorruptKeymapJsonIsRejected() {
-        let unknownAction = Data(#"{"fly":"f"}"#.utf8)
         let twoActionsOneChord = Data(#"{"mute":"m","fullscreen":"m"}"#.utf8)
         let badChord = Data(#"{"mute":"M"}"#.utf8)
-        for data in [unknownAction, twoActionsOneChord, badChord] {
+        for data in [twoActionsOneChord, badChord] {
             XCTAssertThrowsError(try JSONDecoder().decode(Keymap.self, from: data), String(decoding: data, as: UTF8.self))
         }
+    }
+
+    func testOlderOrNewerKeymapFilesStayReadable() throws {
+        // Only `mute` is stored, rebound to "x"; "fly" is an action this build does not know.
+        let stored = Data(#"{"mute":"x","fly":"f","speedUp":null,"fullscreen":null}"#.utf8)
+        let keymap = try JSONDecoder().decode(Keymap.self, from: stored)
+        XCTAssertEqual(keymap.chords[.mute]?.description, "x")
+        XCTAssertNil(keymap.chords[.speedUp], "null means the user unbound it")
+        XCTAssertNil(keymap.chords[.fullscreen])
+        XCTAssertEqual(keymap.chords[.playPause]?.description, "space", "an action missing from the file takes its default")
+    }
+
+    func testMissingActionKeepsItsDefaultOnlyWhenTheChordIsFree() throws {
+        // The user gave "space" to mute; playPause is missing from the file and must not steal it back.
+        let keymap = try JSONDecoder().decode(Keymap.self, from: Data(#"{"mute":"space"}"#.utf8))
+        XCTAssertEqual(keymap.chords[.mute]?.description, "space")
+        XCTAssertNil(keymap.chords[.playPause])
     }
 
     func testJumpFractionsAndGlobalActions() {

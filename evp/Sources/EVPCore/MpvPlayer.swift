@@ -74,6 +74,7 @@ public final class MpvPlayer {
 
     /// A headless player: no video or audio output.
     public init() throws {
+        dispatchPrecondition(condition: .onQueue(.main))
         // mpv requires the C numeric locale; AppKit may have set another one.
         setlocale(LC_NUMERIC, "C")
         guard let h = mpv_create() else { throw MpvError(code: MPV_ERROR_NOMEM.rawValue) }
@@ -81,7 +82,7 @@ public final class MpvPlayer {
         wake = Unmanaged.passRetained(WakeBox())
         wake.takeUnretainedValue().player = self
         // keep-open: at the end of a file mpv pauses on the last frame instead of unloading it, so position and
-        // duration stay readable and no end-of-file event fires; the resume rule near the end relies on this.
+        // duration stay readable and MPV_EVENT_END_FILE does not fire (the `endOfFile` property event does); the resume rule near the end relies on this.
         let options = [("vo", "null"), ("ao", "null"), ("hwdec", "auto-safe"), ("keep-open", "yes"), ("input-media-keys", "no")]
         for (name, value) in options { try Self.check(mpv_set_option_string(h, name, value)) }
         try Self.check(mpv_initialize(h))
@@ -104,7 +105,10 @@ public final class MpvPlayer {
 
     // MARK: Playback
 
-    public func load(_ url: URL) throws { try command(["loadfile", url.path]) }
+    public func load(_ url: URL) throws {
+        precondition(url.isFileURL, "only file URLs can be loaded")
+        try command(["loadfile", url.path])
+    }
 
     public func setPaused(_ paused: Bool) throws { try set("pause", paused ? "yes" : "no") }
 
@@ -141,8 +145,10 @@ public final class MpvPlayer {
     // MARK: Tracks
 
     public func tracks() throws -> [Track] {
-        guard let json = try property("track-list"),
-              let list = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[String: Any]] else { return [] }
+        guard let json = try property("track-list") else { return [] }
+        guard let list = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[String: Any]] else {
+            throw MpvError(code: MPV_ERROR_PROPERTY_FORMAT.rawValue)
+        }
         return list.compactMap { entry in
             guard let id = entry["id"] as? Int, let kind = Track.Kind(rawValue: entry["type"] as? String ?? "") else { return nil }
             return Track(id: id, kind: kind, language: entry["lang"] as? String, title: entry["title"] as? String,

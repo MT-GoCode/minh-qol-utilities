@@ -2,7 +2,7 @@
 public enum Action: String, CaseIterable, Codable {
     case playPause
     case seekBackShort, seekForwardShort, seekBackLong, seekForwardLong
-    case speedUp, speedDown
+    case speedUp, speedDown, speedReset
     case volumeUp, volumeDown
     case jump0, jump1, jump2, jump3, jump4, jump5, jump6, jump7, jump8, jump9
     case frameBack, frameForward
