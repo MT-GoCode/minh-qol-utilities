@@ -1,5 +1,7 @@
-// Test driver: synthetic input and window discovery. Needs GUI permissions, so run it as `rac exec`.
+// Test driver: synthetic input and window discovery. `key`, `media` and `snapshot` need GUI permissions, so run
+// them as `rac exec`; `windows` works from any shell. Built by ./test into .build/evpdrive.
 //   evpdrive windows <pid>               one JSON object per window: {"id":N,"x":..,"y":..,"w":..,"h":..}
+//   evpdrive snapshot <window id> <png>  window-scoped screenshot
 //   evpdrive key <pid|hid> <chord> [n]   chord like right, shift+right, j, space, ctrl+space; n>1 sends autorepeat
 //   evpdrive media <code>...             media keys (16 play/pause, 17 next, 18 previous, 19 fast, 20 rewind)
 import AppKit
@@ -15,6 +17,11 @@ let modifiers: [String: CGEventFlags] = ["shift": .maskShift, "ctrl": .maskContr
 
 func fail(_ message: String) -> Never { FileHandle.standardError.write(Data((message + "\n").utf8)); exit(2) }
 
+func int(_ text: String) -> Int {
+    guard let value = Int(text) else { fail("not a number: \(text)") }
+    return value
+}
+
 func postKey(target: String, chord: String, count: Int) {
     let parts = chord.split(separator: "+").map(String.init)
     guard let name = parts.last, let code = codes[name] else { fail("unknown key in chord \(chord)") }
@@ -28,9 +35,9 @@ func postKey(target: String, chord: String, count: Int) {
             let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)!
             event.flags = flags
             if i > 0 && down { event.setIntegerValueField(.keyboardEventAutorepeat, value: 1) }
-            if target == "hid" { event.post(tap: .cghidEventTap) } else { event.postToPid(pid_t(target)!) }
+            if target == "hid" { event.post(tap: .cghidEventTap) } else { event.postToPid(pid_t(int(target))) }
         }
-        usleep(30_000)
+        usleep(30_000)  // about one macOS key-repeat interval
     }
 }
 
@@ -40,21 +47,33 @@ func postMedia(_ key: Int) {
                            timestamp: 0, windowNumber: 0, context: nil, subtype: 8, data1: (key << 16) | flags, data2: -1)!
             .cgEvent!.post(tap: .cghidEventTap)
     }
-    usleep(400_000)
+    usleep(400_000)  // spacing at which every injected media key was delivered in the probes
 }
 
 func listWindows(pid: pid_t) {
     let info = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
-    for w in info where (w[kCGWindowOwnerPID as String] as? pid_t) == pid && (w[kCGWindowLayer as String] as? Int) == 0 {
+    let mine = info.filter { ($0[kCGWindowOwnerPID as String] as? pid_t) == pid && ($0[kCGWindowLayer as String] as? Int) == 0 }
+    if mine.isEmpty { fail("no windows for pid \(pid)") }
+    for w in mine {
         let b = w[kCGWindowBounds as String] as! [String: Double]
         print(#"{"id":\#(w[kCGWindowNumber as String]!),"x":\#(b["X"]!),"y":\#(b["Y"]!),"w":\#(b["Width"]!),"h":\#(b["Height"]!)}"#)
     }
 }
 
+func snapshot(window: Int, to path: String) {
+    let shot = Process()
+    shot.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+    shot.arguments = ["-x", "-o", "-l", String(window), path]
+    try! shot.run()
+    shot.waitUntilExit()
+    if shot.terminationStatus != 0 { fail("screencapture failed for window \(window)") }
+}
+
 let args = Array(CommandLine.arguments.dropFirst())
 switch args.first {
-case "windows" where args.count == 2: listWindows(pid: pid_t(args[1])!)
-case "key" where args.count >= 3: postKey(target: args[1], chord: args[2], count: args.count > 3 ? Int(args[3])! : 1)
-case "media" where args.count >= 2: args.dropFirst().forEach { postMedia(Int($0)!) }
-default: fail("usage: evpdrive windows <pid> | key <pid|hid> <chord> [n] | media <code>...")
+case "windows" where args.count == 2: listWindows(pid: pid_t(int(args[1])))
+case "snapshot" where args.count == 3: snapshot(window: int(args[1]), to: args[2])
+case "key" where args.count >= 3: postKey(target: args[1], chord: args[2], count: args.count > 3 ? int(args[3]) : 1)
+case "media" where args.count >= 2: args.dropFirst().forEach { postMedia(int($0)) }
+default: fail("usage: evpdrive windows <pid> | snapshot <window id> <png> | key <pid|hid> <chord> [n] | media <code>...")
 }
