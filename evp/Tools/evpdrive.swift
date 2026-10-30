@@ -1,10 +1,12 @@
 // Test driver: synthetic input and window discovery. `key`, `media` and `snapshot` need GUI permissions, so run
 // them as `rac exec`; `windows` works from any shell. Built by ./test into .build/evpdrive.
 //   evpdrive windows <pid>               one JSON object per window: {"id":N,"x":..,"y":..,"w":..,"h":..}
+//   evpdrive resize <pid> <width> <height>  move the first window to the top-left, then set its frame size (needs Accessibility)
 //   evpdrive snapshot <window id> <png>  window-scoped screenshot
 //   evpdrive key <pid|hid> <chord> [n]   chord like right, shift+right, j, space, ctrl+space; n>1 sends autorepeat
 //   evpdrive media <code>...             media keys (16 play/pause, 17 next, 18 previous, 19 fast, 20 rewind)
 import AppKit
+import ApplicationServices
 
 let codes: [String: CGKeyCode] = [
     "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9, "b": 11, "q": 12, "w": 13,
@@ -70,6 +72,19 @@ func listWindows(pid: pid_t) {
     }
 }
 
+func resize(pid: pid_t, width: Double, height: Double) {
+    var windows: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(AXUIElementCreateApplication(pid), kAXWindowsAttribute as CFString, &windows) == .success,
+          let window = (windows as? [AXUIElement])?.first else { fail("no accessible window for pid \(pid)") }
+    // A window cannot grow past the screen edge, so start from the corner (just below the menu bar).
+    var origin = CGPoint(x: 0, y: 40)
+    guard let position = AXValueCreate(.cgPoint, &origin),
+          AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, position) == .success else { fail("could not move the window of pid \(pid)") }
+    var size = CGSize(width: width, height: height)
+    guard let value = AXValueCreate(.cgSize, &size),
+          AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value) == .success else { fail("could not resize the window of pid \(pid)") }
+}
+
 func snapshot(window: Int, to path: String) {
     let shot = Process()
     shot.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
@@ -82,8 +97,9 @@ func snapshot(window: Int, to path: String) {
 let args = Array(CommandLine.arguments.dropFirst())
 switch args.first {
 case "windows" where args.count == 2: listWindows(pid: pid_t(int(args[1])))
+case "resize" where args.count == 4: resize(pid: pid_t(int(args[1])), width: Double(int(args[2])), height: Double(int(args[3])))
 case "snapshot" where args.count == 3: snapshot(window: int(args[1]), to: args[2])
 case "key" where args.count >= 3: postKey(target: parseTarget(args[1]), chord: args[2], count: args.count > 3 ? int(args[3]) : 1)
 case "media" where args.count >= 2: args.dropFirst().forEach { postMedia(int($0)) }
-default: fail("usage: evpdrive windows <pid> | snapshot <window id> <png> | key <pid|hid> <chord> [n] | media <code>...")
+default: fail("usage: evpdrive windows <pid> | resize <pid> <w> <h> | snapshot <window id> <png> | key <pid|hid> <chord> [n] | media <code>...")
 }

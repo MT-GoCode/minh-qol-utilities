@@ -1,6 +1,9 @@
 #!/bin/bash
-# The one entry point for the whole suite. Extra arguments go to `swift test` (e.g. --filter Integration).
-# Output of every run lands in results/<timestamp>-<pid>/ (xunit.xml and log.txt).
+# The one entry point for the whole suite.
+#   ./test                 unit and integration tests in parallel, then the E2E tests one at a time
+#   ./test --filter X      any other arguments go straight to `swift test` (one run, so a filter is a subset)
+# E2E tests drive one real app on one real screen, so they run on a single worker (one at a time).
+# Output of every run lands in results/<timestamp>-<pid>/ (xunit*.xml and log.txt).
 set -euo pipefail
 cd "$(dirname "$0")"
 missing=0
@@ -10,7 +13,16 @@ command -v pkg-config >/dev/null || { echo "missing: pkg-config (brew install pk
 pkg-config --exists mpv 2>/dev/null || { echo "missing: libmpv (brew install mpv)"; missing=1; }
 [ "$missing" -eq 0 ] || exit 1
 Tools/make-fixtures
+scripts/build.sh >/dev/null || { echo "app build failed: run scripts/build.sh"; exit 1; }
 [ .build/evpdrive -nt Tools/evpdrive.swift ] || { mkdir -p .build && swiftc -O Tools/evpdrive.swift -o .build/evpdrive; }
 RUN="results/$(date +%Y%m%d-%H%M%S)-$$"
 mkdir -p "$RUN"
-swift test --parallel --xunit-output "$RUN/xunit.xml" "$@" 2>&1 | tee "$RUN/log.txt"
+
+status=0
+if [ $# -eq 0 ]; then
+  swift test --parallel --skip E2E --xunit-output "$RUN/xunit.xml" 2>&1 | tee "$RUN/log.txt" || status=$?
+  swift test --parallel --num-workers 1 --filter E2E --xunit-output "$RUN/xunit-e2e.xml" 2>&1 | tee -a "$RUN/log.txt" || status=$?
+else
+  swift test --xunit-output "$RUN/xunit.xml" "$@" 2>&1 | tee "$RUN/log.txt" || status=$?
+fi
+exit "$status"

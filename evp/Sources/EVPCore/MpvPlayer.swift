@@ -65,16 +65,41 @@ public final class MpvPlayer {
     private static let speedRange = 0.01...100.0
     private static let volumeRange = 0.0...100.0
 
+    /// Where the player sends picture and sound. `video` draws through a render context (`attachRenderer`) and
+    /// plays audio; `headless` has neither, for tests.
+    public enum Output {
+        case headless
+        case video
+
+        fileprivate var options: [(String, String)] {
+            switch self {
+            case .headless: return [("vo", "null"), ("ao", "null")]
+            case .video: return [("vo", "libmpv")]
+            }
+        }
+    }
+
+    public static var libraryVersion: String {
+        let version = mpv_client_api_version()
+        return "\(version >> 16).\(version & 0xFFFF)"
+    }
+
     public var onEvent: ((Event) -> Void)?
+    /// The render context has a new frame to draw.
+    public var onNeedsRedraw: (() -> Void)?
+    private let output: Output
     private let handle: OpaquePointer
     private let wake: Unmanaged<WakeBox>
+    private var renderContext: OpaquePointer?
 
     /// Lets the wakeup callback (any thread) reach the player without keeping it alive.
     private final class WakeBox { weak var player: MpvPlayer? }
 
-    /// A headless player: no video or audio output.
-    public init() throws {
+    public convenience init() throws { try self.init(output: .headless) }
+
+    public init(output: Output) throws {
         dispatchPrecondition(condition: .onQueue(.main))
+        self.output = output
         // mpv requires the C numeric locale; AppKit may have set another one.
         setlocale(LC_NUMERIC, "C")
         guard let h = mpv_create() else { throw MpvError(code: MPV_ERROR_NOMEM.rawValue) }
@@ -83,7 +108,7 @@ public final class MpvPlayer {
         wake.takeUnretainedValue().player = self
         // keep-open: at the end of a file mpv pauses on the last frame instead of unloading it, so position and
         // duration stay readable and MPV_EVENT_END_FILE does not fire (the `endOfFile` property event does); the resume rule near the end relies on this.
-        let options = [("vo", "null"), ("ao", "null"), ("hwdec", "auto-safe"), ("keep-open", "yes"), ("input-media-keys", "no")]
+        let options = output.options + [("hwdec", "auto-safe"), ("keep-open", "yes"), ("input-media-keys", "no")]
         for (name, value) in options { try Self.check(mpv_set_option_string(h, name, value)) }
         try Self.check(mpv_initialize(h))
         // mpv holds wakeup_lock while calling the callback, and setting it to nil takes the same lock,
@@ -98,6 +123,7 @@ public final class MpvPlayer {
     }
 
     deinit {
+        detachRenderer()
         mpv_set_wakeup_callback(handle, nil, nil)
         wake.release()
         mpv_terminate_destroy(handle)
@@ -105,9 +131,64 @@ public final class MpvPlayer {
 
     // MARK: Playback
 
-    public func load(_ url: URL) throws {
+    /// Starts playing `url`, at `start` seconds when given. A video player must have its renderer attached first:
+    /// mpv decides the video pipeline when the file opens.
+    public func load(_ url: URL, start: Double? = nil) throws {
         precondition(url.isFileURL, "only file URLs can be loaded")
-        try command(["loadfile", url.path])
+        precondition(output == .headless || renderContext != nil, "attach the renderer before loading")
+        try command(start.map { ["loadfile", url.path, "replace", "-1", "start=\($0)"] } ?? ["loadfile", url.path])
+    }
+
+    // MARK: Rendering (OpenGL)
+
+    /// Creates the render context. Call with the OpenGL context current, before `load`.
+    public func attachRenderer() throws {
+        precondition(output == .video && renderContext == nil, "attachRenderer is for a video player, once")
+        var api = strdup(MPV_RENDER_API_TYPE_OPENGL)
+        defer { free(api) }
+        var glInit = mpv_opengl_init_params(get_proc_address: Self.glProcAddress, get_proc_address_ctx: nil)
+        try withUnsafeMutablePointer(to: &glInit) { glInitPointer in
+            var params = [mpv_render_param(type: MPV_RENDER_PARAM_API_TYPE, data: api),
+                          mpv_render_param(type: MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, data: glInitPointer),
+                          mpv_render_param(type: MPV_RENDER_PARAM_INVALID, data: nil)]
+            try Self.check(mpv_render_context_create(&renderContext, handle, &params))
+        }
+        mpv_render_context_set_update_callback(renderContext, { ctx in
+            let box = Unmanaged<WakeBox>.fromOpaque(ctx!).takeUnretainedValue()
+            DispatchQueue.main.async { box.player?.onNeedsRedraw?() }
+        }, wake.toOpaque())
+    }
+
+    /// Draws the current frame into the default framebuffer of the current OpenGL context, fitted with black bars.
+    public func render(width: Int32, height: Int32) {
+        guard let renderContext else { preconditionFailure("render before attachRenderer") }
+        var framebuffer = mpv_opengl_fbo(fbo: 0, w: width, h: height, internal_format: 0)
+        var flipY: Int32 = 1
+        let code = withUnsafeMutablePointer(to: &framebuffer) { fbo in
+            withUnsafeMutablePointer(to: &flipY) { flip in
+                var params = [mpv_render_param(type: MPV_RENDER_PARAM_OPENGL_FBO, data: fbo),
+                              mpv_render_param(type: MPV_RENDER_PARAM_FLIP_Y, data: flip),
+                              mpv_render_param(type: MPV_RENDER_PARAM_INVALID, data: nil)]
+                return mpv_render_context_render(renderContext, &params)
+            }
+        }
+        precondition(code >= 0, "mpv_render_context_render failed: \(MpvError(code: code))")
+    }
+
+    /// Tell mpv the frame was shown (it uses this for timing).
+    public func didSwap() { mpv_render_context_report_swap(renderContext) }
+
+    /// Frees the render context. Call with the OpenGL context current, before the context is destroyed.
+    public func detachRenderer() {
+        guard let context = renderContext else { return }
+        mpv_render_context_set_update_callback(context, nil, nil)
+        mpv_render_context_free(context)
+        renderContext = nil
+    }
+
+    private static let glProcAddress: @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?) -> UnsafeMutableRawPointer? = { _, name in
+        let symbol = CFStringCreateWithCString(kCFAllocatorDefault, name, CFStringBuiltInEncodings.ASCII.rawValue)
+        return CFBundleGetFunctionPointerForName(CFBundleGetBundleWithIdentifier("com.apple.opengl" as CFString), symbol)
     }
 
     public func setPaused(_ paused: Bool) throws { try set("pause", paused ? "yes" : "no") }

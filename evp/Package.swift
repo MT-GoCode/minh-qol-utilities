@@ -7,6 +7,7 @@ let package = Package(
     targets: [
         .systemLibrary(name: "CMpv", path: "Sources/CMpv", pkgConfig: "mpv", providers: [.brew(["mpv"])]),
         .target(name: "EVPCore", dependencies: ["CMpv"]),
+        .executableTarget(name: "EVP", dependencies: ["EVPCore"]),
         .executableTarget(name: "EVPStateStress", dependencies: ["EVPCore"]),
         .testTarget(name: "EVPTests", dependencies: ["EVPCore", "EVPStateStress"]),
     ],

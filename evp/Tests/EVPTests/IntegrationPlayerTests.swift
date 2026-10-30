@@ -14,6 +14,11 @@ final class IntegrationPlayerTests: XCTestCase {
         XCTAssertEqual(try s.player.property("pause"), "no")
     }
 
+    func testLoadingAtAStartPositionBeginsThere() throws {
+        let s = try Session(loading: "t.mp4", start: 7)
+        try s.waitForPosition(near: 7, within: 0.5)
+    }
+
     func testRelativeSeekLandsExactlyAndKeepsPaused() throws {
         let s = try Session(loading: "t.mp4")
         try s.player.setPaused(true)

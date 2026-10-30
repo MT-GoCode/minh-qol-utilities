@@ -21,11 +21,11 @@ final class Session {
     let player: MpvPlayer
     private(set) var events: [MpvPlayer.Event] = []
 
-    init(loading name: String? = nil) throws {
+    init(loading name: String? = nil, start: Double? = nil) throws {
         player = try MpvPlayer()
         player.onEvent = { [weak self] in self?.events.append($0) }
         if let name {
-            try player.load(try Fixtures.url(name))
+            try player.load(try Fixtures.url(name), start: start)
             try waitFor(.fileLoaded)
         }
     }
