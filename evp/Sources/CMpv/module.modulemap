@@ -1,0 +1,7 @@
+module CMpv [system] {
+    header "/opt/homebrew/include/mpv/client.h"
+    header "/opt/homebrew/include/mpv/render.h"
+    header "/opt/homebrew/include/mpv/render_gl.h"
+    link "mpv"
+    export *
+}

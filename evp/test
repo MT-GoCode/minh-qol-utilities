@@ -1,0 +1,14 @@
+#!/bin/bash
+# The one entry point for the whole suite. Extra arguments go to `swift test` (e.g. --filter Integration).
+# Output of every run lands in results/<timestamp>/ (xunit.xml and log.txt).
+set -euo pipefail
+cd "$(dirname "$0")"
+missing=0
+for tool in swift ffmpeg; do command -v "$tool" >/dev/null || { echo "missing: $tool (brew install ffmpeg)"; missing=1; }; done
+[ -e /opt/homebrew/lib/libmpv.dylib ] || { echo "missing: libmpv (brew install mpv)"; missing=1; }
+[ "$missing" -eq 0 ] || exit 1
+Tools/make-fixtures
+RUN="results/$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$RUN"
+swift test --parallel --xunit-output "$RUN/xunit.xml" "$@" 2>&1 | tee "$RUN/log.txt"
+exit "${PIPESTATUS[0]}"
