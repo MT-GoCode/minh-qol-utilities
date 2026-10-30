@@ -1,3 +1,4 @@
+import EVPCore
 import XCTest
 
 /// The `evp` command's argument handling; opening windows is covered by the E2E tests.
@@ -30,6 +31,43 @@ final class IntegrationCliTests: XCTestCase {
         let two = try evp(["--time", "0:05", real, real])
         XCTAssertEqual(two.status, 1)
         XCTAssertTrue(two.stderr.contains("--time needs exactly one file"))
+    }
+
+    /// Runs `evp` with a stand-in `open` on the PATH that records its arguments, one per line.
+    private func argumentsSentToOpen(_ arguments: [String]) throws -> [String] {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("evp-cli-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let record = folder.appendingPathComponent("arguments")
+        let stub = folder.appendingPathComponent("open")
+        try "#!/bin/sh\nprintf '%s\\n' \"$@\" >> '\(record.path)'\n".write(to: stub, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        let process = Process()
+        process.executableURL = Paths.cli
+        process.arguments = arguments
+        process.environment = ["EVP_APP": Paths.app.path, "PATH": "\(folder.path):/usr/bin:/bin"]
+        try process.run()
+        process.waitUntilExit()
+        XCTAssertEqual(process.terminationStatus, 0)
+        return try String(contentsOf: record, encoding: .utf8).split(separator: "\n").map(String.init)
+    }
+
+    func testEvpHandsTheAppAnEncodedUrlThatDecodesBackToTheFileAndTime() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("evp cli files \(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("odd name & é #1.mkv")
+        try Data().write(to: file)
+
+        let plain = try argumentsSentToOpen([file.path])
+        XCTAssertEqual(Array(plain.prefix(2)), ["-a", Paths.app.path], "no -g unless asked")
+        let request = try OpenRequest(url: XCTUnwrap(URL(string: plain[2])))
+        XCTAssertEqual(request.file.resolvingSymlinksInPath().path, file.resolvingSymlinksInPath().path)
+        XCTAssertNil(request.start)
+
+        let timed = try argumentsSentToOpen(["-g", "--time", "4:52", file.path])
+        XCTAssertEqual(Array(timed.prefix(3)), ["-g", "-a", Paths.app.path])
+        XCTAssertEqual(try OpenRequest(url: XCTUnwrap(URL(string: timed[3]))).start, 292)
     }
 
     func testMissingAppIsReportedNotIgnored() throws {

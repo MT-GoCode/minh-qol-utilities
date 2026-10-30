@@ -8,6 +8,7 @@ controls outside the picture, per-file resume, and VSCode-style restore of every
 ```
 ./test                       the whole suite; output in results/<timestamp>-<pid>/
 ./test --filter Integration  a filter on the same suite, never a separate suite
+EVP_E2E_FULLSCREEN=1 ./test  also run the full-screen E2E test (it takes over the display)
 ```
 
 Requires `swift`, `pkgconf`, `mpv` and (tests only) `ffmpeg`, all from Homebrew; `./test` checks and says what is missing.

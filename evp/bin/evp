@@ -1,15 +1,18 @@
 #!/bin/bash
-# evp [--time 4:52] <file>...   open files in Ergonomic Video Player (one window each)
+# evp [-g] [--time 4:52] <file>...   open files in Ergonomic Video Player (one window each)
+#   -g, --background   do not bring the app to the front (like `open -g`)
 set -euo pipefail
 APP="${EVP_APP:-$HOME/Applications/EVP.app}"
-usage() { echo "usage: evp [--time 4:52] <file>..." >&2; }
+usage() { echo "usage: evp [-g] [--time 4:52] <file>..." >&2; }
 die() { echo "evp: $*" >&2; exit 1; }
 
 time=""
+open_flags=()
 files=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --time) [ $# -ge 2 ] || { usage; exit 2; }; time="$2"; shift 2 ;;
+    -g|--background) open_flags=(-g); shift ;;
     -h|--help) usage; exit 0 ;;
     -*) echo "evp: unknown option $1" >&2; usage; exit 2 ;;
     *) files+=("$1"); shift ;;
@@ -26,5 +29,5 @@ for file in "${files[@]}"; do
 q = {"path": sys.argv[1]}
 if sys.argv[2]: q["time"] = sys.argv[2]
 print("evp://open?" + u.urlencode(q, quote_via=u.quote))' "$absolute" "$time")
-  open -a "$APP" "$url"
+  open ${open_flags[@]+"${open_flags[@]}"} -a "$APP" "$url"   # macOS bash 3.2 treats an empty array as unset
 done

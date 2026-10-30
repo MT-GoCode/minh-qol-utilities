@@ -7,6 +7,8 @@ enum Paths {
     static let app = root.appendingPathComponent("build/EVP.app")
     static let cli = root.appendingPathComponent("bin/evp")
     static let driver = root.appendingPathComponent(".build/evpdrive")
+    /// The run's results folder (set by ./test): E2E tests save their screenshots under it.
+    static let results = ProcessInfo.processInfo.environment["EVP_RESULTS"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.temporaryDirectory
 }
 
 struct WindowInfo {
@@ -19,9 +21,12 @@ struct WindowInfo {
 struct Pixels {
     let width: Int
     let height: Int
+    /// The PNG these pixels were decoded from.
+    let file: URL
     private let rgba: [UInt8]
 
     init(png url: URL) throws {
+        file = url
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil), let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             throw Failure(description: "cannot read \(url.path)")
         }
@@ -36,9 +41,11 @@ struct Pixels {
     }
 
     /// Black is luma below 2 of 255, as the mpv clear colour renders.
-    func nonBlackBounds(belowRow top: Int) -> (width: Int, height: Int)? {
+    func nonBlackBounds(belowRow top: Int) -> (width: Int, height: Int)? { nonBlackBounds(rows: top..<height) }
+
+    func nonBlackBounds(rows: Range<Int>) -> (width: Int, height: Int)? {
         var (minX, maxX, minY, maxY) = (width, -1, height, -1)
-        for y in top..<height {
+        for y in rows {
             for x in 0..<width {
                 let i = (y * width + x) * 4
                 if 0.299 * Double(rgba[i]) + 0.587 * Double(rgba[i + 1]) + 0.114 * Double(rgba[i + 2]) >= 2 {
@@ -50,16 +57,38 @@ struct Pixels {
     }
 
     /// Share of pixels below `top` whose colour channels differ by more than 64: video, not black bars or grey chrome.
-    func colourfulShare(belowRow top: Int) -> Double {
+    func colourfulShare(belowRow top: Int) -> Double { colourfulShare(rows: top..<height) }
+
+    func colourfulShare(rows: Range<Int>) -> Double {
         var colourful = 0
-        for y in top..<height {
+        for y in rows {
             for x in 0..<width {
                 let i = (y * width + x) * 4
                 let channels = [rgba[i], rgba[i + 1], rgba[i + 2]]
                 if Int(channels.max()!) - Int(channels.min()!) > 64 { colourful += 1 }
             }
         }
-        return Double(colourful) / Double((height - top) * width)
+        return Double(colourful) / Double(rows.count * width)
+    }
+}
+
+/// Base class of the E2E tests: one app at a time, always quit afterwards.
+class E2ETestCase: XCTestCase {
+    var app: RunningApp?
+
+    override func setUpWithError() throws {
+        // A leftover instance from an aborted run would answer for the new launch.
+        try RunningApp.stopLeftovers(of: Paths.app)
+    }
+
+    override func tearDownWithError() throws { try app?.terminate() }
+
+    /// Keeps the screenshot a test just analysed, so the results folder shows exactly what was judged.
+    func saveToResults(_ name: String, _ pixels: Pixels) throws {
+        let folder = Paths.results.appendingPathComponent("gallery")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try? FileManager.default.removeItem(at: folder.appendingPathComponent(name))
+        try FileManager.default.copyItem(at: pixels.file, to: folder.appendingPathComponent(name))
     }
 }
 
@@ -89,11 +118,23 @@ final class RunningApp {
         }
     }
 
+    /// LaunchServices hands a URL to a running app of the same bundle id even when `open -a` names another copy, so a
+    /// launch needs every other EVP gone first.
+    private static func waitForNoOtherEVP(timeout: TimeInterval = 10) throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !NSRunningApplication.runningApplications(withBundleIdentifier: "com.minh.evp").isEmpty {
+            guard Date() < deadline else { throw Failure(description: "another EVP is still running: quit it and run the test again") }
+            spin()
+        }
+    }
+
     /// Runs `bin/evp` for `arguments` against `appURL` and waits for that app to be running.
     static func launch(_ arguments: [String], appURL: URL = Paths.app, cli: URL = Paths.cli) throws -> RunningApp {
+        try waitForNoOtherEVP()
         let process = Process()
         process.executableURL = cli
-        process.arguments = arguments
+        // -g: the test runs in the background and must not take focus from whoever is using the machine.
+        process.arguments = ["-g"] + arguments
         process.environment = ["EVP_APP": appURL.path, "PATH": "/usr/bin:/bin"]
         try process.run()
         process.waitUntilExit()
@@ -119,7 +160,8 @@ final class RunningApp {
     private func driver(_ arguments: [String], asApp: Bool = false) throws -> String {
         let process = Process()
         process.executableURL = asApp ? URL(fileURLWithPath: "/usr/local/bin/rac") : Paths.driver
-        process.arguments = (asApp ? ["exec", Paths.driver.path] : []) + arguments
+        // `rac exec` drops the driver's stderr, so merge it into stdout there.
+        process.arguments = asApp ? ["exec", "/bin/sh", "-c", "\"$0\" \"$@\" 2>&1", Paths.driver.path] + arguments : arguments
         let (out, err) = (Pipe(), Pipe())
         process.standardOutput = out
         process.standardError = err
@@ -127,7 +169,7 @@ final class RunningApp {
         let output = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         let errors = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         process.waitUntilExit()
-        guard process.terminationStatus == 0 else { throw Failure(description: "evpdrive \(arguments.joined(separator: " ")): \(errors)") }
+        guard process.terminationStatus == 0 else { throw Failure(description: "evpdrive \(arguments.joined(separator: " ")): \(errors)\(output)") }
         return output
     }
 
@@ -144,6 +186,38 @@ final class RunningApp {
     }
 
     func windowCount() throws -> Int { try driver(["windows", String(application.processIdentifier)]).split(separator: "\n").count }
+
+    /// Presses `id`, waiting for it to appear: the accessibility tree is briefly empty after a window changes Space.
+    func press(_ id: String, timeout: TimeInterval = 10) throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while true {
+            do { return try { _ = try driver(["press", String(application.processIdentifier), id], asApp: true) }() } catch {
+                guard Date() < deadline else {
+                    let seen = (try? driver(["tree", String(application.processIdentifier)], asApp: true)) ?? "no tree"
+                    throw Failure(description: "\(error)\naccessibility tree then:\n\(seen.split(separator: "\n").filter { !$0.contains("AXMenu") }.joined(separator: "\n"))")
+                }
+                usleep(200_000)
+            }
+        }
+    }
+
+    func read(_ id: String) throws -> String {
+        try driver(["read", String(application.processIdentifier), id], asApp: true).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Reads `id` until `done` accepts its text.
+    func wait(for id: String, timeout: TimeInterval = 10, until done: (String) -> Bool) throws -> String {
+        let deadline = Date().addingTimeInterval(timeout)
+        var last = "nothing read"
+        while Date() < deadline {
+            if let text = try? read(id) {
+                if done(text) { return text }
+                last = text
+            }
+            usleep(150_000)
+        }
+        throw Failure(description: "timed out waiting on \(id); last read: \(last)")
+    }
 
     func resize(width: Int, height: Int) throws {
         _ = try driver(["resize", String(application.processIdentifier), String(width), String(height)], asApp: true)

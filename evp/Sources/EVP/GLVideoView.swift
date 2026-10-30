@@ -30,6 +30,7 @@ final class GLVideoView: NSOpenGLView {
 
     override func draw(_ dirtyRect: NSRect) {
         let size = convertToBacking(bounds).size
+        guard size.width >= 1, size.height >= 1 else { return }
         player.render(width: Int32(size.width), height: Int32(size.height))
         openGLContext?.flushBuffer()
         player.didSwap()

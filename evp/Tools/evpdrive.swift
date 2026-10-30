@@ -2,6 +2,9 @@
 // them as `rac exec`; `windows` works from any shell. Built by ./test into .build/evpdrive.
 //   evpdrive windows <pid>               one JSON object per window: {"id":N,"x":..,"y":..,"w":..,"h":..}
 //   evpdrive resize <pid> <width> <height>  move the first window to the top-left, then set its frame size (needs Accessibility)
+//   evpdrive press <pid> <id>            press the button with that accessibility identifier (needs Accessibility)
+//   evpdrive read <pid> <id>             print the value, title or description of that element
+//   evpdrive tree <pid>                  print the accessibility tree (role and identifier), for debugging
 //   evpdrive snapshot <window id> <png>  window-scoped screenshot
 //   evpdrive key <pid|hid> <chord> [n]   chord like right, shift+right, j, space, ctrl+space; n>1 sends autorepeat
 //   evpdrive media <code>...             media keys (16 play/pause, 17 next, 18 previous, 19 fast, 20 rewind)
@@ -85,6 +88,46 @@ func resize(pid: pid_t, width: Double, height: Double) {
           AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value) == .success else { fail("could not resize the window of pid \(pid)") }
 }
 
+func element(pid: pid_t, id: String) -> AXUIElement {
+    func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
+        var value: CFTypeRef?
+        return AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success ? value : nil
+    }
+    func search(_ element: AXUIElement) -> AXUIElement? {
+        if attribute(element, "AXIdentifier") as? String == id { return element }
+        return (attribute(element, kAXChildrenAttribute) as? [AXUIElement])?.lazy.compactMap(search).first
+    }
+    guard let found = search(AXUIElementCreateApplication(pid)) else { fail("no element \(id) in pid \(pid)") }
+    return found
+}
+
+func tree(pid: pid_t) {
+    func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
+        var value: CFTypeRef?
+        return AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success ? value : nil
+    }
+    func walk(_ element: AXUIElement, depth: Int) {
+        let role = attribute(element, kAXRoleAttribute) as? String ?? "?"
+        let id = attribute(element, "AXIdentifier") as? String ?? ""
+        print(String(repeating: "  ", count: depth) + role + (id.isEmpty ? "" : " #" + id))
+        (attribute(element, kAXChildrenAttribute) as? [AXUIElement])?.forEach { walk($0, depth: depth + 1) }
+    }
+    walk(AXUIElementCreateApplication(pid), depth: 0)
+}
+
+func press(pid: pid_t, id: String) {
+    guard AXUIElementPerformAction(element(pid: pid, id: id), kAXPressAction as CFString) == .success else { fail("could not press \(id)") }
+}
+
+func read(pid: pid_t, id: String) {
+    let target = element(pid: pid, id: id)
+    for name in [kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute] {
+        var value: CFTypeRef?
+        if AXUIElementCopyAttributeValue(target, name as CFString, &value) == .success, let value, !"\(value)".isEmpty { print("\(value)"); return }
+    }
+    fail("\(id) has no value, title or description")
+}
+
 func snapshot(window: Int, to path: String) {
     let shot = Process()
     shot.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
@@ -98,8 +141,11 @@ let args = Array(CommandLine.arguments.dropFirst())
 switch args.first {
 case "windows" where args.count == 2: listWindows(pid: pid_t(int(args[1])))
 case "resize" where args.count == 4: resize(pid: pid_t(int(args[1])), width: Double(int(args[2])), height: Double(int(args[3])))
+case "tree" where args.count == 2: tree(pid: pid_t(int(args[1])))
+case "press" where args.count == 3: press(pid: pid_t(int(args[1])), id: args[2])
+case "read" where args.count == 3: read(pid: pid_t(int(args[1])), id: args[2])
 case "snapshot" where args.count == 3: snapshot(window: int(args[1]), to: args[2])
 case "key" where args.count >= 3: postKey(target: parseTarget(args[1]), chord: args[2], count: args.count > 3 ? int(args[3]) : 1)
 case "media" where args.count >= 2: args.dropFirst().forEach { postMedia(int($0)) }
-default: fail("usage: evpdrive windows <pid> | resize <pid> <w> <h> | snapshot <window id> <png> | key <pid|hid> <chord> [n] | media <code>...")
+default: fail("usage: evpdrive windows <pid> | resize <pid> <w> <h> | press <pid> <id> | read <pid> <id> | snapshot <window id> <png> | key <pid|hid> <chord> [n] | media <code>...")
 }

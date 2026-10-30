@@ -17,6 +17,7 @@ scripts/build.sh >/dev/null || { echo "app build failed: run scripts/build.sh"; 
 [ .build/evpdrive -nt Tools/evpdrive.swift ] || { mkdir -p .build && swiftc -O Tools/evpdrive.swift -o .build/evpdrive; }
 RUN="results/$(date +%Y%m%d-%H%M%S)-$$"
 mkdir -p "$RUN"
+export EVP_RESULTS="$PWD/$RUN"
 
 status=0
 if [ $# -eq 0 ]; then

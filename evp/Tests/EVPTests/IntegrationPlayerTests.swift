@@ -110,6 +110,40 @@ final class IntegrationPlayerTests: XCTestCase {
         try s.waitFor(.endOfFile(true), after: mark)
     }
 
+    func testCommandsActAndReportFeedbackUsingTheSettings() throws {
+        var settings = Settings()
+        settings.seekShortSeconds = 3
+        settings.seekLongSeconds = 7
+        let s = try Session(loading: "t.mp4")
+        let player = s.player
+        XCTAssertEqual(try player.perform(.action(.playPause), settings: settings), .done(feedback: "Paused"))
+        XCTAssertEqual(try player.property("pause"), "yes")
+        XCTAssertEqual(try player.perform(.action(.seekForwardLong), settings: settings), .done(feedback: "+7s"))
+        try s.waitForPosition(near: 7, within: 0.2)
+        XCTAssertEqual(try player.perform(.action(.seekBackShort), settings: settings), .done(feedback: "-3s"))
+        try s.waitForPosition(near: 4, within: 0.2)
+        XCTAssertEqual(try player.perform(.action(.seekForwardShort), settings: settings), .done(feedback: "+3s"))
+        try s.waitForPosition(near: 7, within: 0.2)
+        XCTAssertEqual(try player.perform(.action(.seekBackLong), settings: settings), .done(feedback: "-7s"))
+        try s.waitForPosition(near: 0, within: 0.2)
+        XCTAssertEqual(try player.perform(.action(.jump5), settings: settings), .done(feedback: "50%"))
+        try s.waitForPosition(near: 10, within: 0.2)
+        XCTAssertEqual(try player.perform(.seekFraction(0.25), settings: settings), .done(feedback: nil))
+        try s.waitForPosition(near: 5, within: 0.2)
+        for _ in 0..<2 { _ = try player.perform(.action(.speedUp), settings: settings) }
+        XCTAssertEqual(try player.perform(.action(.speedUp), settings: settings), .done(feedback: "Speed 1.3x"))
+        XCTAssertEqual(try player.perform(.action(.speedReset), settings: settings), .done(feedback: "Speed 1x"))
+        XCTAssertEqual(try player.perform(.action(.volumeDown), settings: settings), .done(feedback: "Volume 95%"))
+        XCTAssertEqual(try player.perform(.setVolume(40), settings: settings), .done(feedback: nil))
+        XCTAssertEqual(try player.volume(), 40)
+        XCTAssertEqual(try player.perform(.action(.mute), settings: settings), .done(feedback: "Muted"))
+        XCTAssertEqual(try player.perform(.action(.mute), settings: settings), .done(feedback: "Unmuted"))
+        XCTAssertEqual(try player.perform(.action(.playPause), settings: settings), .done(feedback: "Playing"))
+        for interfaceAction in [Action.fullscreen, .toggleBar, .screenshot, .pauseAll] {
+            XCTAssertEqual(try player.perform(.action(interfaceAction), settings: settings), .notAnEngineCommand, "\(interfaceAction)")
+        }
+    }
+
     func testTrackListAndSelection() throws {
         let s = try Session(loading: "t2.mkv")
         let audio = try s.player.tracks().filter { $0.kind == .audio }
