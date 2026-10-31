@@ -26,6 +26,7 @@ sudo ./nextdns-sidecar/uninstall.sh
 sudo ./wtalk/uninstall.sh
 sudo ./multistreamviewer/uninstall.sh
 sudo ./stayup/uninstall.sh
+./evp/uninstall.sh
 sudo ./blockrem/uninstall.sh
 sudo ./remote-agent-connector/uninstall.sh
 ./scripts/unset-paseo-daemon.sh
@@ -41,6 +42,7 @@ sudo -v
 sudo ./demonlock/install.sh
 sudo ./multistreamviewer/install.sh
 sudo ./stayup/install.sh
+./evp/install.sh
 sudo ./blockrem/install.sh
 sudo ./remote-agent-connector/install.sh
 ./wtalk/setup.sh
@@ -62,6 +64,7 @@ sudo ./demonlock/register-recommended-spares.sh
 | **wtalk** | push-to-talk dictation daemon (Parakeet transcribe + Gemini cleanup); PyInstaller-frozen, sealed, root-owned | `sudo ./wtalk/install.sh` | yes |
 | **multistreamviewer** | desktop groups that scope ⌘⇥ + a hold-⌘⌥ overview; never moves windows; `multistreamviewer` CLI | `sudo ./multistreamviewer/install.sh` | yes |
 | **stayup** | menu-bar toggle for staying awake with the lid closed (`pmset disablesleep`); `stayup` CLI | `sudo ./stayup/install.sh` | yes |
+| **evp** | Ergonomic Video Player: a libmpv video and audio player with the controls below the picture, per-file resume, VSCode-style window restore and the F7/F8/F9 media keys under your control; `evp <file>` CLI | `./evp/install.sh` (no sudo; needs `brew install mpv pkgconf`) | no |
 | **blockrem** | scheduled **un-quittable screen blocks** for forced breaks — a root daemon revives a grey full-screen cover + input freeze at each alarm; **fail-open** (a bug always lifts it); managing alarms is no-sudo | `sudo ./blockrem/install.sh` | yes |
 | **browser-blitz** | drive your **real, logged-in Chrome** with `agent-browser`: a shim impersonates a Chrome CDP endpoint over an MV3 extension, and each agent session is fenced to its own tab group; `browser-blitz` CLI | `./browser-blitz/browser-blitz/install.sh` | no |
 | **pacemaker** | turn a silent long-running command into one that pings you: run it under Monitor and it detaches the job, stays quiet under 60s, then reports elapsed, silence, and whatever the job has written since the last ping. Survives Monitor expiry; `--attach` resumes. **Also runs on Linux.** | `./pacemaker/install.sh` | no |
