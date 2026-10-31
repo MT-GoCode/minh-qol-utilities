@@ -934,8 +934,8 @@ SLEEPER = ("Whenever a message starts with `Acknowledge first: irreproachable ac
            "with one word. When told SLEEP, run in the foreground with the Bash tool, timeout 60000: "
            "`python3 -c 'import time; time.sleep(55); print(\"SLEPT\")'`, then reply DONE. Run no other command.")
 SLEEPER_ACKS = ("Whenever a message starts with `Acknowledge first: irreproachable ack <nonce>`, run that command, then "
-                "reply with one word. When told SLEEP, run in the foreground with the Bash tool, timeout 60000: "
-                "`python3 -c 'import time; time.sleep(55); print(\"SLEPT\")'`, then reply DONE. Run no other command.")
+                "reply with one word. When told SLEEP, run in the foreground with the Bash tool, timeout 200000: "
+                "`python3 -c 'import time; time.sleep(150); print(\"SLEPT\")'`, then reply DONE. Run no other command.")
 GOAL = ("selftest goal: this goal is never met, so never run irreproachable clear; reply to each message with one "
         "word")
 
@@ -1178,13 +1178,14 @@ exec "{REAL_PASEO}" "$@"
             aid = agent("steer", SLEEPER_ACKS)
             wait_idle(aid)
             subprocess.run(["paseo", "send", "--no-wait", aid, "--prompt", "SLEEP"], capture_output=True)
-            shell_runs = lambda tl: sum(1 for l in tl.splitlines() if l.startswith("[Shell]") and "time.sleep(55)" in l)
+            shell_runs = lambda tl: sum(1 for l in tl.splitlines() if l.startswith("[Shell]") and "time.sleep(150)" in l)
             started = wait_for(lambda: shell_runs(subprocess.run(["paseo", "logs", aid], capture_output=True,
                                                                  text=True).stdout) >= 1, 60, 1)
-            check("the agent started its 55 s foreground call", started)
+            check("the agent started its 150 s foreground call", started)
             t_start = time.time()
-            # the steer falls due at +40 s, mid-call; the hold after it (one interval) outlasts the call's last 15 s
-            new(aid, "--idle-after", "20s", "--steer-every", "40s")
+            # the steer falls due at +120 s, mid-call; the hold after it is one interval (120 s), which outlasts the
+            # call's last 30 s plus the agent's slow first response (over 40 s observed)
+            new(aid, "--idle-after", "20s", "--steer-every", "120s")
             busy_at = {}
 
             def steer_seen():
@@ -1192,16 +1193,16 @@ exec "{REAL_PASEO}" "$@"
                 if st:
                     busy_at.setdefault("s", status(aid).get("Status"))
                 return bool(st)
-            wait_for(steer_seen, 30 + SLACK + 10, 1)
+            wait_for(steer_seen, 120 + SLACK + 10, 1)
             st = [x for x in sent(aid, "steer") if x >= t_start]
-            check("a steer went out while the agent was busy", st and st[0] < t_start + 55 - 5, (st, busy_at))
+            check("a steer went out while the agent was busy", st and st[0] < t_start + 150 - 5, (st, busy_at))
             # Claude Code takes the interrupting message up either at once or once the call ends (both observed);
             # either way it must arrive and be acted on, which a wedged queued turn never does
             check("the agent acted on the steer (acked it), and the goal never went dormant over it",
-                  st and wait_for(lambda: [t for t, _ in events(aid, "ACK ") if t >= st[0]], 55 + 2 * SLACK, 1)
+                  st and wait_for(lambda: [t for t, _ in events(aid, "ACK ") if t >= st[0]], 120, 1)
                   and not events(aid, "DORMANT"),
                   (log_lines(aid)[-4:], subprocess.run(["paseo", "logs", aid], capture_output=True, text=True).stdout[-1500:]))
-            wait_idle(aid, 150)
+            wait_idle(aid, 240)
             tl = subprocess.run(["paseo", "logs", aid], capture_output=True, text=True).stdout
             check("the interrupted command still finished (SLEPT): it was backgrounded, not killed",
                   wait_for(lambda: "SLEPT" in subprocess.run(["paseo", "logs", aid], capture_output=True,
