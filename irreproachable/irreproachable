@@ -394,7 +394,7 @@ def resolve_goal(arg):
 def fresh_state(g):
     now = time.time()
     return {"token": g["token"], "last_sent": 0.0, "next_steer": now + g["steer_every"], "next_check": now,
-            "awaiting": None, "dormant": None, "gone_seen": None, "ended": None}
+            "awaiting": None, "awaiting_busy": False, "dormant": None, "gone_seen": None, "ended": None}
 
 
 def due_at(s):
@@ -494,9 +494,15 @@ class Service:
             if busy:
                 s["next_check"] = now + g["idle_after"]
                 return
-            s["dormant"] = {"since": now, "next_usage_check": now + g["steer_every"]}
-            log(aid, f"DORMANT {g['token']} unacked={s['awaiting']}")
-            return
+            if s.get("awaiting_busy"):
+                # it reached a running turn inside tool output, where agents may rightly refuse it as injection:
+                # only a message that started a turn of its own proves the agent could not act
+                log(aid, f"UNACKED {s['awaiting']} sent while busy")
+                s["awaiting"] = None
+            else:
+                s["dormant"] = {"since": now, "next_usage_check": now + g["steer_every"]}
+                log(aid, f"DORMANT {g['token']} unacked={s['awaiting']}")
+                return
         g2, _ = read_goal(aid)
         if g2 is None or g2["token"] != g["token"]:
             s["next_check"] = now                     # cleared or replaced during this tick: send nothing
@@ -504,8 +510,8 @@ class Service:
         kind = "steer" if steer_due else "goal"
         nonce = uuid.uuid4().hex[:12]
         body = steer_text(g) if kind == "steer" else goal_prompt(g, waiting, quiet)
-        prev = (s["awaiting"], s["last_sent"], s["next_steer"])
-        s["awaiting"], s["last_sent"] = nonce, now
+        prev = (s["awaiting"], s.get("awaiting_busy", False), s["last_sent"], s["next_steer"])
+        s["awaiting"], s["awaiting_busy"], s["last_sent"] = nonce, busy, now
         if kind == "steer":
             s["next_steer"] = now + g["steer_every"]
         atomic_write(gpath(aid, "state.json"), json.dumps(s))     # before the send: an early ack is accepted,
@@ -514,7 +520,7 @@ class Service:
         now = time.time()
         if isinstance(r, PaseoError):
             if r.code in NOT_DELIVERED:
-                s["awaiting"], s["last_sent"], s["next_steer"] = prev
+                s["awaiting"], s["awaiting_busy"], s["last_sent"], s["next_steer"] = prev
             s["next_check"] = now + g["idle_after"]
             return
         log(aid, f"SENT {g['token']} {kind} nonce={nonce} quiet={int(quiet)}")
@@ -1003,7 +1009,7 @@ exec "{REAL_PASEO}" "$@"
     def agent(title, prompt, mode="bypassPermissions"):
         # A SILENT agent must never ack, but Minh's doctrine tells every agent to run the ack line, which can beat
         # its prompt. So its acks go to an empty home of their own and can never reach the goal: exact, not hoped for.
-        home_env = os.path.join(T, "nowhere") if prompt == SILENT else HOMEDIR
+        home_env = os.path.join(T, "nowhere") if prompt in (SILENT, SLEEPER) else HOMEDIR
         aid = paseo("run", "--no-wait", "--workspace", WS, "--title", f"irr-selftest-{title}",
                     "--provider", "claude/haiku", "--mode", mode,
                     "--env", f"IRREPROACHABLE_HOME={home_env}", "--env", f"PATH={T}/agentbin:{os.environ['PATH']}",
@@ -1163,6 +1169,7 @@ exec "{REAL_PASEO}" "$@"
             started = wait_for(lambda: shell_runs(subprocess.run(["paseo", "logs", aid], capture_output=True,
                                                                  text=True).stdout) >= 1, 60, 1)
             check("the agent started its 55 s foreground call", started)
+            t_start = time.time()
             new(aid, "--idle-after", "20s", "--steer-every", "30s")
             busy_at_steer = {}
 
@@ -1173,13 +1180,21 @@ exec "{REAL_PASEO}" "$@"
                 return False
             wait_for(steer_seen, 30 + SLACK + 10, 1)
             check("a steer went out while the agent was running", busy_at_steer.get("s") in BUSY, busy_at_steer)
+            # A steer waits for the running call; an interrupt frees the turn at once (Claude Code backgrounds the
+            # call, probed). So the agent must stay busy until the 55 s call would have ended.
+            seen = []
+            while time.time() < t_start + 55 - 5:
+                seen.append(status(aid).get("Status"))
+                time.sleep(1)
+            check("the agent stayed busy until its call finished: the steer did not interrupt it",
+                  seen and all(x in BUSY for x in seen), seen)
             wait_idle(aid, 120)
             tl = subprocess.run(["paseo", "logs", aid], capture_output=True, text=True).stdout
-            runs = shell_runs(tl)
-            # An interrupt does not kill the call: Claude Code moves it to the background ("[Task notification] ...")
-            # and the turn moves on (probed). A steer waits for the call, so nothing is ever backgrounded.
-            check("the foreground call ran once in the foreground and finished: the steer did not interrupt it",
-                  "SLEPT" in tl and runs == 1 and "[Task notification]" not in tl, (runs, tl[-1500:]))
+            check("the call ran once and printed SLEPT", "SLEPT" in tl and shell_runs(tl) == 1, tl[-1500:])
+            n = len(sent(aid))
+            ok = wait_for(lambda: len(sent(aid)) > n, 20 + 2 * SLACK, 1)
+            check("a steer it never acked (it reached a busy turn) does not make the goal dormant",
+                  ok and not events(aid, "DORMANT") and events(aid, "UNACKED"), log_lines(aid)[-5:])
             finish(aid)
 
         if want("pending"):

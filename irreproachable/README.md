@@ -41,6 +41,9 @@ runs it first. When the next message is due and the last one is still unacknowle
 - if it is not busy, it had its turn and could not act: the goal goes **dormant**. Nothing is sent, goal prompts or
   steers, and the goal stays registered.
 
+Only a message that started a turn of its own counts. A steer delivered into a busy turn arrives inside tool
+output, where an agent may rightly refuse it as injection; leaving it unacknowledged never makes a goal dormant.
+
 A dormant goal comes back when the agent acks late, when `revive` runs, or by **auto-revive**: every `--steer-every`
 (sooner if the report gives a reset time) the service reads `paseo usage --agent <id> --refresh` and revives the
 goal once the agent's account has capacity (no account-wide window at 100 %).
