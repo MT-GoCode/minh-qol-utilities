@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let pauseAll = PauseAll()
     private var hotkey: GlobalHotkey?
     private var mediaKeys: MediaKeys?
+    private var eventTap: EventTapRoute?
     private var settingsWindow: SettingsWindowController?
 
     /// `EVP_HOME` moves the state elsewhere (the tests use a scratch folder).
@@ -47,6 +48,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.mainMenu = MainMenu.make(target: self)
         mediaKeys = MediaKeys(decoupled: store.state.settings.decoupleMediaKeys) { [weak self] in self?.playingWindow() }
         registerPauseAllHotkey()
+        let tap = EventTapRoute(decoupled: { [weak self] in self?.store.state.settings.decoupleMediaKeys ?? true }) { [weak self] in self?.playingWindow() }
+        eventTap = tap
+        if !store.state.settings.decoupleMediaKeys { tap.enable(prompt: false) }
         guard store.state.settings.restoreWindowsOnLaunch else {
             store.update { $0.windows = [] }
             return
@@ -115,7 +119,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func openSettings(_ sender: Any?) {
         if settingsWindow == nil {
-            settingsWindow = SettingsWindowController(store: store) { [weak self] old, new in self?.settingsChanged(from: old, to: new) }
+            settingsWindow = SettingsWindowController(store: store, tapStatus: { [weak self] in self?.eventTap?.status.rawValue ?? "Off" },
+                                                      enableTap: { [weak self] in self?.eventTap?.enable(prompt: true) },
+                                                      onChange: { [weak self] old, new in self?.settingsChanged(from: old, to: new) })
         }
         settingsWindow?.showWindow(nil)
         settingsWindow?.window?.makeKeyAndOrderFront(nil)
@@ -124,6 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// What cannot be read per event is told here: the media keys' route and the global hotkey.
     private func settingsChanged(from old: Settings, to new: Settings) {
         mediaKeys?.decoupled = new.decoupleMediaKeys
+        if new.decoupleMediaKeys { eventTap?.disable() } else if old.decoupleMediaKeys { eventTap?.enable(prompt: true) }
         if old.keymap.chords[.pauseAll] != new.keymap.chords[.pauseAll] { registerPauseAllHotkey() }
     }
 

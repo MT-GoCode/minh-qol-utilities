@@ -15,13 +15,19 @@ final class SettingsWindowController: NSWindowController {
 
     private let store: StateStore
     private let onChange: (_ old: Settings, _ new: Settings) -> Void
+    private let tapStatus: () -> String
+    private let enableTap: () -> Void
+    private let tapLabel = NSTextField(labelWithString: "")
     private let message = NSTextField(wrappingLabelWithString: "")
     private var numbers: [NumberField] = []
     private var toggles: [Toggle] = []
     private var recorders: [Action: KeyRecorderField] = [:]
 
-    init(store: StateStore, onChange: @escaping (_ old: Settings, _ new: Settings) -> Void) {
+    init(store: StateStore, tapStatus: @escaping () -> String, enableTap: @escaping () -> Void,
+         onChange: @escaping (_ old: Settings, _ new: Settings) -> Void) {
         self.store = store
+        self.tapStatus = tapStatus
+        self.enableTap = enableTap
         self.onChange = onChange
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 520), styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Settings"
@@ -53,6 +59,7 @@ final class SettingsWindowController: NSWindowController {
         let rows: [NSView] = [
             toggle("Keep the media keys (F7, F8, F9) out of EVP", id: "setting-decouple", \.decoupleMediaKeys),
             toggle("Reopen the windows of the last session at launch", id: "setting-restore", \.restoreWindowsOnLaunch),
+            tapRow(),
             number("Short seek step (seconds)", id: "setting-seekShort", \.seekShortSeconds),
             number("Long seek step (seconds)", id: "setting-seekLong", \.seekLongSeconds),
             number("Speed step", id: "setting-speedStep", \.speedStep),
@@ -61,6 +68,19 @@ final class SettingsWindowController: NSWindowController {
             number("Volume of a file never opened before", id: "setting-defaultVolume", \.defaultVolume),
         ]
         return column(rows)
+    }
+
+    /// Reliable media keys need the Accessibility permission; this row shows where that stands and asks for it.
+    private func tapRow() -> NSView {
+        tapLabel.setAccessibilityIdentifier("setting-tap-status")
+        let button = NSButton(title: "Enable…", target: self, action: #selector(enableReliableKeys))
+        button.setAccessibilityIdentifier("setting-tap-enable")
+        return row("Reliable media keys (needs Accessibility)", NSStackView(views: [tapLabel, button]))
+    }
+
+    @objc private func enableReliableKeys() {
+        enableTap()
+        refresh()
     }
 
     private func keybindsTab() -> NSView {
@@ -191,5 +211,6 @@ final class SettingsWindowController: NSWindowController {
         for field in numbers { field.stringValue = String(format: "%g", settings[keyPath: field.keyPath]) }
         for box in toggles { box.state = settings[keyPath: box.keyPath] ? .on : .off }
         for (action, recorder) in recorders { recorder.chord = settings.keymap.chords[action] }
+        tapLabel.stringValue = tapStatus()
     }
 }
