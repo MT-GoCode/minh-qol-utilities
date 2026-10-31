@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let pauseAll = PauseAll()
     private var hotkey: GlobalHotkey?
     private var mediaKeys: MediaKeys?
+    private var settingsWindow: SettingsWindowController?
 
     /// `EVP_HOME` moves the state elsewhere (the tests use a scratch folder).
     private static var stateDirectory: URL {
@@ -89,6 +90,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func registerPauseAllHotkey() {
+        hotkey?.unregister()
+        hotkey = nil
         guard let chord = store.state.settings.keymap.chords[.pauseAll] else { return }
         hotkey = GlobalHotkey { [weak self] in
             guard let self else { return }
@@ -107,6 +110,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    // MARK: Settings
+
+    @objc func openSettings(_ sender: Any?) {
+        if settingsWindow == nil {
+            settingsWindow = SettingsWindowController(store: store) { [weak self] old, new in self?.settingsChanged(from: old, to: new) }
+        }
+        settingsWindow?.showWindow(nil)
+        settingsWindow?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// What cannot be read per event is told here: the media keys' route and the global hotkey.
+    private func settingsChanged(from old: Settings, to new: Settings) {
+        mediaKeys?.decoupled = new.decoupleMediaKeys
+        if old.keymap.chords[.pauseAll] != new.keymap.chords[.pauseAll] { registerPauseAllHotkey() }
+    }
 
     // MARK: File menu
 

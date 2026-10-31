@@ -6,6 +6,9 @@ enum MainMenu {
         let main = NSMenu()
         let app = NSMenuItem()
         app.submenu = NSMenu()
+        let settings = app.submenu!.addItem(withTitle: "Settings…", action: #selector(AppDelegate.openSettings(_:)), keyEquivalent: ",")
+        settings.target = target
+        app.submenu?.addItem(.separator())
         app.submenu?.addItem(withTitle: "Quit Ergonomic Video Player", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         main.addItem(app)
 

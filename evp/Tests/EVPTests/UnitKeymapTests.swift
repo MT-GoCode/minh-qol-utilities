@@ -103,4 +103,12 @@ final class UnitKeymapTests: XCTestCase {
         XCTAssertEqual(Action.allCases.compactMap(\.jumpFraction), [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
         XCTAssertEqual(Action.global, [.pauseAll])
     }
+
+    func testSettingsNamesReadAsPlainWordsAndAreAllDifferent() {
+        XCTAssertEqual(Action.seekBackShort.title, "Seek back short")
+        XCTAssertEqual(Action.toggleBar.title, "Toggle bar")
+        XCTAssertEqual(Action.jump3.title, "Jump to 30%")
+        XCTAssertEqual(Action.pauseAll.title, "Pause all")
+        XCTAssertEqual(Set(Action.allCases.map(\.title)).count, Action.allCases.count)
+    }
 }
