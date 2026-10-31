@@ -1183,7 +1183,8 @@ exec "{REAL_PASEO}" "$@"
             check("a steer went out while the agent was busy", st and st[0] < t_start + 55 - 5, (st, busy_at))
             check("the agent acked it at once, as a turn of its own",
                   st and wait_for(lambda: [t for t, _ in events(aid, "ACKED") if t >= st[0]], SLACK, 0.5)
-                  and [t for t, _ in events(aid, "ACKED") if t >= st[0]][0] < t_start + 55 - 5, log_lines(aid)[-4:])
+                  and [t for t, _ in events(aid, "ACKED") if t >= st[0]][0] < t_start + 55 - 5,
+                  (log_lines(aid)[-4:], subprocess.run(["paseo", "logs", aid], capture_output=True, text=True).stdout[-1500:]))
             wait_idle(aid, 150)
             tl = subprocess.run(["paseo", "logs", aid], capture_output=True, text=True).stdout
             check("the interrupted command still finished (SLEPT): it was backgrounded, not killed",
