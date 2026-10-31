@@ -292,14 +292,12 @@ in `Sensors.swift`):
 
 **Baked blocklist (`register` refuses):** every browser bundle id (Chrome/Safari/Firefox/Edge/Brave/
 Arc/Opera/Vivaldi/Yandex, incl. beta/dev channels) and `sh.paseo.desktop` — sparing any of them would
-defeat the whole point. (The Paseo daemon helper `sh.paseo.desktop.helper` is a *different* bundle id,
-so it can still be spared — the GUI dies, the daemon lives.) `com.minh.demonlock` is **unremovable** (losing
+defeat the whole point. (The Paseo daemon runs under launchd as a node process, not as an app bundle.) `com.minh.demonlock` is **unremovable** (losing
 it → the agent dies on lockout → nuclear WindowServer loop).
 
 **The compiled default spare list is just `com.minh.demonlock` itself** — demonlock is standalone and coupled
 to nothing. Everything else registers INTO it over time: your own apps (`wtalk`/`remote-agent-connector`/
-`multistreamviewer`/`stayup`, Regime A) from their own installers, the paseo daemon (Regime B) from
-`setup-paseo-daemon.sh`, and third-party utils (`alttab`/`raycast`/`shottr`/`amphetamine`/`betterdisplay`/
+`multistreamviewer`/`stayup`, Regime A) from their own installers, and third-party utils (`alttab`/`raycast`/`shottr`/`amphetamine`/`betterdisplay`/
 `scroll-reverser`/`karabiner-*`, Regime B) via `register-recommended-spares.sh`.
 
 ```bash

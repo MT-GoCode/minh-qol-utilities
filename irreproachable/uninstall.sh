@@ -1,23 +1,27 @@
 #!/bin/bash
-# uninstall.sh — irreproachable. Refuses while goals are live: their watchers would keep prompting agents to run a
-# clear that no longer exists. ~/.irreproachable is kept.
+# uninstall.sh — irreproachable. Refuses while goals exist: their agents would keep being told to run a command that
+# no longer exists. ~/.irreproachable (goal logs) is kept.
 set -euo pipefail
-BINDIR="${BINDIR:-$HOME/.local/bin}"
+BIN="$HOME/.local/bin/irreproachable"
+STATE="$HOME/.irreproachable"
 ok()  { printf '  \033[32m✓\033[0m %s\n' "$*"; }
-bad() { printf '  \033[31m✗\033[0m %s\n' "$*"; }
-if [ -f "$BINDIR/irreproachable" ]; then
-  out="$("$BINDIR/irreproachable" ls)"     # a failing ls aborts here (set -e): never remove blind
-  live="$(printf '%s\n' "$out" | grep -E '^[0-9a-f]{8}  watching ' || true)"
-  if [ -n "$live" ]; then
-    bad "these goals are live; clear them first (irreproachable clear --agent <id>):"
-    printf '%s\n' "$live" | sed 's/^/    /'
-    exit 1
-  fi
-  rm -f "$BINDIR/irreproachable"; ok "removed $BINDIR/irreproachable"
+bad() { printf '  \033[31m✗\033[0m %s\n' "$*" >&2; exit 1; }
+
+goals="$(ls "$STATE"/*/goal.json 2>/dev/null || true)"
+if [ -n "$goals" ]; then
+  printf '%s\n' "$goals" | sed 's#.*/\([^/]*\)/goal.json#    \1#' >&2
+  bad "these goals exist; clear them first (irreproachable clear --agent <id>)"
+fi
+if [ "$(uname -s)" = Darwin ]; then
+  launchctl bootout "gui/$(id -u)/com.minh.irreproachable" 2>/dev/null || true
+  rm -f "$HOME/Library/LaunchAgents/com.minh.irreproachable.plist"
+  ok "LaunchAgent removed"
 else
-  ok "nothing installed at $BINDIR/irreproachable"
+  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+  systemctl --user disable --now irreproachable.service 2>/dev/null || true
+  rm -f "$HOME/.config/systemd/user/irreproachable.service"
+  systemctl --user daemon-reload
+  ok "systemd user unit removed"
 fi
-if grep -qs 'irreproachable paseo shim' "$BINDIR/paseo"; then
-  rm -f "$BINDIR/paseo"; ok "removed the paseo shim install.sh wrote"
-fi
-[ -d "$HOME/.irreproachable" ] && printf '  \033[33m!\033[0m %s kept (goal logs)\n' "$HOME/.irreproachable" || true
+rm -f "$BIN"; ok "removed $BIN"
+[ -d "$STATE" ] && printf '  \033[33m!\033[0m %s kept (goal logs)\n' "$STATE" || true

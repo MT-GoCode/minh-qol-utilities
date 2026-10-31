@@ -28,7 +28,7 @@ sudo ./multistreamviewer/uninstall.sh
 sudo ./stayup/uninstall.sh
 sudo ./blockrem/uninstall.sh
 sudo ./remote-agent-connector/uninstall.sh
-./scripts/unset-paseo-daemon.sh
+launchctl bootout gui/$(id -u)/sh.paseo.daemon && rm ~/Library/LaunchAgents/sh.paseo.daemon.plist
 ./browser-blitz/browser-blitz/install.sh --uninstall
 sudo ./demonlock/uninstall.sh
 ./gitas/uninstall.sh
@@ -65,13 +65,16 @@ sudo ./demonlock/register-recommended-spares.sh
 | **blockrem** | scheduled **un-quittable screen blocks** for forced breaks — a root daemon revives a grey full-screen cover + input freeze at each alarm; **fail-open** (a bug always lifts it); managing alarms is no-sudo | `sudo ./blockrem/install.sh` | yes |
 | **browser-blitz** | drive your **real, logged-in Chrome** with `agent-browser`: a shim impersonates a Chrome CDP endpoint over an MV3 extension, and each agent session is fenced to its own tab group; `browser-blitz` CLI | `./browser-blitz/browser-blitz/install.sh` | no |
 | **pacemaker** | turn a silent long-running command into one that pings you: run it under Monitor and it detaches the job, stays quiet under 60s, then reports elapsed, silence, and whatever the job has written since the last ping. Survives Monitor expiry; `--attach` resumes. **Also runs on Linux.** | `./pacemaker/install.sh` | no |
-| **irreproachable** | keep a Paseo agent working toward a goal: re-sends the goal when nothing has woken it for 6m, and steers it with a progress-and-discipline check every 30m (interrupting if busy). The agent ends it with `irreproachable clear`. **Also runs on Linux.** | `./irreproachable/install.sh` | no |
+| **irreproachable** | keep a Paseo agent working toward a goal: one service; goal prompts after 1m idle, steers every 30m delivered into the current turn; agents acknowledge every message, and a goal whose agent cannot act goes dormant until it can (`irreproachable revive`). The agent ends it with `irreproachable clear`. **Also runs on Linux.** | `./irreproachable/install.sh` | no |
 | **gitas** | one git identity manager: per-account name/email/PAT in one 0600 file, routed automatically by remote URL (authorship *and* auth from the same trigger). All GitHub over HTTPS+PAT — no keys, no `gh auth`. **Also runs on Linux.** | `./gitas/install.sh <accounts.ini>` | no |
 
-**Paseo daemon (`scripts/`).** `scripts/setup-paseo-daemon.sh` hands the third-party Paseo daemon to
-launchd (so it survives the desktop app dying — e.g. when demonlock closes the GUI on a lockout).
-`scripts/unset-paseo-daemon.sh` reverses it. Both are no-sudo, run as you, and need `jq`. This is
-config-wiring for an external app, not a repo-built tool, so it's a manual script rather than an installer.
+**Paseo daemon (`scripts/`).** `scripts/setup-paseo-daemon.sh` is the one supported Paseo setup. On a Mac it
+runs the daemon as the LaunchAgent `sh.paseo.daemon`, started through a login zsh so agents (which inherit the
+daemon's environment) get your full shell environment; the desktop app is only a client. No sudo, and it loads
+over plain ssh. On ox-dev it keeps `/etc/systemd/system/paseo.service` equal to `scripts/paseo.service`. Restart
+the Mac daemon only with `launchctl kickstart -k gui/$UID/sh.paseo.daemon` (`paseo daemon restart/start` would
+start a second, unsupervised one); remove it with `launchctl bootout gui/$UID/sh.paseo.daemon && rm
+~/Library/LaunchAgents/sh.paseo.daemon.plist`.
 
 **Installers are commonized.** Every `install.sh` is a short manifest over the shared
 `scripts/install-lib.sh` (build as you → deploy root-owned → CLI → launchd, **verified running** →
@@ -108,7 +111,7 @@ paused; no-op if nowplaying-cli isn't installed).
   missing plugin. Verify with `xcode-select -p` (must print the Xcode path, not CommandLineTools) and
   `xcrun --show-sdk-path`. Needed to build the Swift apps (demonlock, nextdns-sidecar, blockrem,
   multistreamviewer, stayup, remote-agent-connector).
-- **A console (GUI) login as you** — the gui-domain LaunchAgents can't load over plain SSH, and the installers now fail loudly when a job doesn't come up. Run installs from a local terminal (or `rac exec`), and reinstall `remote-agent-connector` only from a local terminal — its reinstall kills the tunnel an SSH session rides on.
+- **A console (GUI) login as you** — the root-run app installers' gui-domain LaunchAgents can't load over plain SSH (the per-user ones from `setup-paseo-daemon.sh` and `irreproachable/install.sh` can), and the installers now fail loudly when a job doesn't come up. Run installs from a local terminal (or `rac exec`), and reinstall `remote-agent-connector` only from a local terminal — its reinstall kills the tunnel an SSH session rides on.
 - **Admin**: you must be in the `admin` group. On a hardened machine that means a live demonlock release-valve grant with enough time left (`demonlock admin-release-valve status`); the grant can be extended while live with `sudo demonlock admin-release-valve i-still-need-sudo "for 1h"`.
 - **git identity (gitas)** — `./gitas/install.sh ~/my-accounts.ini` (no sudo). Do this before any git work:
   it purges every other credential store and is what makes `git push` and `gh` authenticate as the right
@@ -117,8 +120,8 @@ paused; no-op if nowplaying-cli isn't installed).
 - **uv:** `curl -LsSf https://astral.sh/uv/install.sh | sh` — for wtalk.
 - **Karabiner-Elements** — to bind wtalk's push-to-talk key.
 - **Node** — `brew install node` — for browser-blitz (its installer also pulls `@playwright/cli` via npm).
-- **Paseo.app** *(optional, for step 8)* — install and launch it once so `~/.local/bin/paseo` and
-  `~/Library/Application Support/Paseo/desktop-settings.json` exist; `setup-paseo-daemon.sh` refuses without them.
+- **Paseo** — the CLI from Homebrew's npm (`/opt/homebrew/bin/npm i -g @getpaseo/cli`) and, optionally, Paseo.app
+  as a client; needed for step 8.
 - **Third-party menubar apps you use** *(optional, for step 8)* — Raycast, AltTab, Shottr, Amphetamine,
   BetterDisplay, Scroll Reverser: `register-recommended-spares.sh` can only spare what's installed (it prints ✗ per missing app).
 - **NextDNS Encrypted-DNS profile** (for nextdns-sidecar's `networklockdown`): log in at <https://apple.nextdns.io> (a browser step) and download your `.mobileconfig` — it lands as `~/Downloads/NextDNS (<id>).mobileconfig` — the nextdns-sidecar installer hardens it (`--profile-src`) and prints the `open` lines to install it in System Settings ▸ General ▸ Device Management. Pass credentials via `--credentials-file <0600 file with PROFILE=… / API_KEY=…>` so the profile ID (a credential) never sits on argv. *(nextdns-sidecar refuses to `arm` without the profile — arming would strand all DNS.)*
@@ -135,7 +138,7 @@ paused; no-op if nowplaying-cli isn't installed).
 5. **blockrem** — `sudo ./blockrem/install.sh` → `blockrem perm-ask` (Accessibility, for the input freeze) → `blockrem set …` / `blockrem list`. Alarm management is no-sudo.
 6. **remote-agent-connector** *(optional)* — `sudo ./remote-agent-connector/install.sh`, then Dock ▸ Get Permissions and `rac setup`.
 7. **browser-blitz** *(optional, no sudo)* — `./browser-blitz/browser-blitz/install.sh` deploys the shim + CLI + extension to `~/.local/lib/browser-blitz` (nothing runs from the checkout; `git pull && ./install.sh` redeploys and restarts the shim), then load the extension once per Chrome profile you want to drive: `chrome://extensions` → Developer mode → **Load unpacked** → `~/.local/lib/browser-blitz/extension`.
-8. **paseo daemon + third-party spares** *(optional)* — `./scripts/setup-paseo-daemon.sh`, then `sudo ./demonlock/register-recommended-spares.sh` (spares karabiner/alttab/raycast/etc.).
+8. **Paseo daemon** (required) — `./scripts/setup-paseo-daemon.sh`; then, optionally, `sudo ./demonlock/register-recommended-spares.sh` (spares karabiner/alttab/raycast/etc.).
 
 ### 2b. The clicks only a human can do (once per machine)
 System Settings ▸ Privacy & Security: **Location Services** → Demonlock: *Always* · **Accessibility** →

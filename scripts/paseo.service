@@ -1,0 +1,26 @@
+[Unit]
+Description=Paseo daemon (agent supervisor)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dev
+Group=dev
+WorkingDirectory=/home/dev
+Environment=HOME=/home/dev
+Environment=PATH=/home/dev/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/paseo daemon run --home /home/dev/.paseo
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+# Container ceiling is 4 GiB; keep max+swap under it.
+MemoryHigh=2.75G
+MemoryMax=3.25G
+MemorySwapMax=512M
+# kill only the runaway agent, not the daemon
+OOMPolicy=continue
+
+[Install]
+WantedBy=multi-user.target

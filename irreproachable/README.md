@@ -1,76 +1,86 @@
 # irreproachable
 
-Keep a Paseo agent working toward a goal until the agent says it is met.
+Keep a Paseo agent working toward a goal until the agent says it is met. One supervised service watches every
+goal on the machine. It re-sends the goal when the agent has sat idle, and steers it on a fixed cadence. Every
+message asks the agent to acknowledge it; an agent that cannot act (out of usage, logged out, stopped) leaves it
+unacknowledged, and its goal goes quiet without ending. A goal ends only when it is cleared, replaced, or its agent
+is gone.
 
 ```
-irreproachable new "<goal>" [--steer-every DUR] [--idle-after DUR] [--steer-prompt TEXT] [--watch-claude-usage] [--agent ID]
+irreproachable new "<goal>" [--steer-every DUR] [--idle-after DUR] [--steer-prompt TEXT] [--agent ID]
+irreproachable ack <nonce> [--agent ID]
 irreproachable clear [--agent ID]
 irreproachable mute [DURATION] [--agent ID]
 irreproachable unmute [--agent ID]
+irreproachable revive
 irreproachable ls
-irreproachable help
-irreproachable reset-defaults
+irreproachable serve                  run by launchd/systemd
+irreproachable help | reset-defaults
 irreproachable --selftest [SECTION ...]
 ```
 
-Run `new` inside a Paseo agent, and it governs that agent through `$PASEO_AGENT_ID`. `--agent` targets another
-agent from a plain shell. An agent has at most one goal, so editing a goal is running `new` again: it replaces
-the old one. A detached watcher then sends two kinds of message:
+Run `new` inside a Paseo agent and it governs that agent (`$PASEO_AGENT_ID`); `--agent` targets another. An agent
+has at most one goal, so editing a goal is running `new` again: it replaces the old one.
 
-- **Goal prompt** (`GOAL_PROMPT` in the script) is sent once the agent has sat idle for `--idle-after`, default
-  1m (room to type after you interrupt it). While one of the agent's pacemaker runs is live (pacemaker records
-  `$PASEO_AGENT_ID`), the window is 21m instead: pacemaker pings at least every 1200s, so 21m of silence means
-  nobody is watching the run. It is only sent to an agent that is not busy.
-- **Steer** (`STEER_HEADER`, `STEER_BODY`, `RESUME`) is sent every `--steer-every`, default 30m. It **interrupts
-  a busy agent on purpose**, because Paseo has no message queue. The appended resume line tells the agent to redo
-  what was cut off. `--steer-prompt` replaces only the body. A steer due within `--idle-after` goes out in place
-  of a goal prompt, since it carries the goal too.
+## Messages
 
-Nothing is sent while the agent has a pending permission request: it is waiting on you. `mute [DURATION]` holds
-goal prompts only (steers keep their cadence) for up to 1h, the default; `unmute` ends it early. The agent ends the goal
-with `irreproachable clear`. `ls` shows every goal as `watching`, `watching (muted 12m)` or `ENDED <why>`.
+- **Goal prompt**: the goal again, once the agent has sat idle `--idle-after` (default 1m). While one of the
+  agent's pacemaker runs is watched, the wait is 21m instead (pacemaker pings at least every 1200s).
+- **Steer**: every `--steer-every` (default 30m), a progress-and-discipline check with the goal. If the agent is
+  busy it is delivered into its current turn (`paseo send --behavior steer`); it does not interrupt.
 
-## Claude usage
+Nothing is sent while the agent has a pending permission request. `mute [DURATION]` holds goal prompts (not
+steers) for up to 1h; `unmute` ends it at once.
 
-`--watch-claude-usage` holds every send while this machine's Claude login has no usage left (the same
-windows Claude Code's `/usage` shows), sleeps to the earliest reset, then sends once. Without it irreproachable
-never touches Claude credentials. A usage check that cannot be read holds too, logged as `USAGE-CHECK-FAILED`.
-`ls` shows a held goal.
+## Acknowledgement and dormancy
 
-## Defaults
+Every message starts with `Acknowledge first: irreproachable ack <nonce>`, a fresh nonce per message. The agent
+runs it first. When the next message is due and the last one is still unacknowledged:
 
-`~/.irreproachable-defaults.conf` holds the steer text (`{goal}` marks where the goal goes), the steer
-interval and the idle time, each explained in the file. `new` reads it, its flags override it for one goal,
-and a running goal keeps what it started with. `irreproachable reset-defaults` restores the shipped file;
-`irreproachable help` shows the current values and the path.
+- if the agent is busy, it is working: nothing is sent, and it is checked again after `--idle-after`;
+- if it is not busy, it had its turn and could not act: the goal goes **dormant**. Nothing is sent, goal prompts or
+  steers, and the goal stays registered.
 
-## How it decides
+A dormant goal comes back when the agent acks late, when `revive` runs, or by **auto-revive**: every `--steer-every`
+(sooner if the report gives a reset time) the service reads `paseo usage --agent <id> --refresh` and revives the
+goal once the agent's account has capacity (no account-wide window at 100 %).
 
-It checks the agent with `paseo inspect`. Busy means `Status` is `running` or `initializing`; quiet means
-`now − max(UpdatedAt, last send)`. Between checks it sleeps until the earliest moment a send could be due, so an
-agent costs one check per `--idle-after` (about 1.5 s of CPU), never a held `paseo wait`, which uses 150 MB.
+## revive
 
-State lives in `~/.irreproachable/<agent-id>/`. `meta.json` is written once, by the watcher. `log` holds
-`<epoch> <event>` lines (`START`, `SEND`, `CLEARED`, `REPLACED`, `MUTED`, `UNMUTED`, `END <reason>`). A mute is a
-`muted` file holding its goal's token and end time, so a mute never outlives its goal.
+`irreproachable revive` is idempotent. It starts the service through the OS manager if it is down, wakes every
+dormant goal (one message each), retries faulted ones, and prints one line per goal. Run it after a usage overage.
 
-## Limits
+## Files and owners
 
-- Claude Paseo agents only. Codex is deferred: in default mode it blocks on permission prompts.
-- Runs on the same host as the agent's Paseo daemon.
-- Goals do not survive a reboot, and may not survive a Paseo daemon restart (not measured). `ls` shows them as
-  `ENDED`.
-- About 1 s passes between seeing an agent idle and sending the goal prompt. A turn that starts inside that second
-  is interrupted.
+```
+~/.irreproachable/
+  serve.lock serve.pid serve.log serve.log.prev     the service's
+  defaults.conf                                     yours to edit; `reset-defaults` restores it
+  <agent-id>/
+    goal.json     written by new (create/replace) and clear (delete)
+    state.json    written by the service only
+    fault         written by the service: "<goal.json mtime_ns> <message>" while a goal is faulted
+    ack           written by ack and revive
+    muted         written by mute, unmute, clear
+    log           `<epoch> <EVENT> ...` lines: history, never read for live state
+```
 
-## Install
+Paseo errors never end a goal; they are retried and logged once per error streak. A goal whose own files are
+broken is FAULTED (shown by `ls`) and skipped until its `goal.json` changes; the other goals continue.
 
-`./install.sh` puts one file in `~/.local/bin`. When paseo is reachable only from a login shell (nvm on macOS),
-it also writes a marked `~/.local/bin/paseo` shim, because agents' shells get a plain PATH. Re-run it if node
-moves. `./uninstall.sh` removes both. Both refuse while any goal is live: install would leave its watcher on the old
-code, and uninstall would leave it asking an agent to run a `clear` that no longer exists. `~/.irreproachable` is kept either way.
+## Service units
 
-`irreproachable --selftest` runs real throwaway Haiku agents in one `irr-selftest` workspace, one at a time, for
-about 20 minutes and a few cents. It deletes every agent it made and archives the workspace. One check holds a
-permission prompt open for 3 minutes; it shows up in the Paseo app and says to leave it alone, so do. Name sections (`goal`,
-`steer-a`, …) to run only those.
+- **macOS**: `~/Library/LaunchAgents/com.minh.irreproachable.plist`, `KeepAlive`, started through
+  `/bin/zsh -lic` so it runs in the same environment as the agents (the Paseo daemon is started the same way).
+- **Linux**: `~/.config/systemd/user/irreproachable.service`, `Restart=always`; needs linger
+  (`loginctl enable-linger $USER`).
+
+`install.sh` writes the unit, migrates v1 goals, and restarts the service (safe: all state is on disk).
+`uninstall.sh` refuses while goals exist.
+
+## Selftest
+
+`irreproachable --selftest [SECTION ...]` runs behavioural checks against real Paseo agents (claude/haiku) and a
+private service in a temporary home, through a fake `paseo` that can simulate outages, hangs and usage reports.
+Nothing installed is touched. On a Mac run it as `/bin/zsh -lic 'python3 irreproachable/irreproachable --selftest'`.
+About 30 minutes and a few cents.
