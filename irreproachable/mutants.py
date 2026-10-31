@@ -20,7 +20,7 @@ MUTANTS = {
     "reuse-nonce": ("lifecycle", "nonce = uuid.uuid4().hex[:12]", 'nonce = "abcdefabcdef"', "different nonce"),
     "ignore-steer-prompt": ("lifecycle", '"steer_text": a.steer_prompt or d["steer_text"]', '"steer_text": d["steer_text"]',
                             "--steer-prompt X is stored"),
-    "steer-queues": ("steer", '"--behavior", "interrupt", ', '"--behavior", "steer", ', "acked it at once"),
+    "steer-queues": ("steer", '"--behavior", "interrupt", ', '"--behavior", "steer", ', "acked it while its call was still running"),
     "no-busy-steer": ("steer", 'steer_due = not pending and (now >= s["next_steer"]', 'steer_due = idle and (now >= s["next_steer"]',
                       "went out while the agent was busy"),
     "no-pending-bump": ("pending", 's["next_steer"] = max(s["next_steer"], now + g["steer_every"])', "pass",

@@ -1181,8 +1181,10 @@ exec "{REAL_PASEO}" "$@"
             wait_for(steer_seen, 30 + SLACK + 10, 1)
             st = [x for x in sent(aid, "steer") if x >= t_start]
             check("a steer went out while the agent was busy", st and st[0] < t_start + 55 - 5, (st, busy_at))
-            check("the agent acked it at once, as a turn of its own",
-                  st and wait_for(lambda: [t for t, _ in events(aid, "ACKED") if t >= st[0]], SLACK, 0.5)
+            # before the 55 s call would have ended: a queued message could only be answered after it
+            check("the agent acked it while its call was still running, as a turn of its own",
+                  st and wait_for(lambda: [t for t, _ in events(aid, "ACKED") if t >= st[0]],
+                                  max(0, t_start + 55 - 5 - time.time()), 0.5)
                   and [t for t, _ in events(aid, "ACKED") if t >= st[0]][0] < t_start + 55 - 5,
                   (log_lines(aid)[-4:], subprocess.run(["paseo", "logs", aid], capture_output=True, text=True).stdout[-1500:]))
             wait_idle(aid, 150)
