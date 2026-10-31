@@ -1159,8 +1159,9 @@ exec "{REAL_PASEO}" "$@"
             aid = agent("steer", SLEEPER)
             wait_idle(aid)
             subprocess.run(["paseo", "send", "--no-wait", aid, "--prompt", "SLEEP"], capture_output=True)
-            started = wait_for(lambda: "time.sleep(55)" in subprocess.run(["paseo", "logs", aid], capture_output=True,
-                                                                          text=True).stdout, 60, 1)
+            shell_runs = lambda tl: sum(1 for l in tl.splitlines() if l.startswith("[Shell]") and "time.sleep(55)" in l)
+            started = wait_for(lambda: shell_runs(subprocess.run(["paseo", "logs", aid], capture_output=True,
+                                                                 text=True).stdout) >= 1, 60, 1)
             check("the agent started its 55 s foreground call", started)
             new(aid, "--idle-after", "20s", "--steer-every", "30s")
             busy_at_steer = {}
@@ -1174,8 +1175,11 @@ exec "{REAL_PASEO}" "$@"
             check("a steer went out while the agent was running", busy_at_steer.get("s") in BUSY, busy_at_steer)
             wait_idle(aid, 120)
             tl = subprocess.run(["paseo", "logs", aid], capture_output=True, text=True).stdout
-            check("the foreground call finished (SLEPT): the steer did not interrupt it", "SLEPT" in tl, tl[-1500:])
-            check("the steer was acknowledged", events(aid, "ACKED"), log_lines(aid))
+            runs = shell_runs(tl)
+            # an interrupt cuts the call (probed) and the agent may then redo it, so SLEPT alone is not proof:
+            # the call must have run exactly once and finished
+            check("the foreground call ran once and finished (SLEPT): the steer did not interrupt it",
+                  "SLEPT" in tl and runs == 1, (runs, tl[-1500:]))
             finish(aid)
 
         if want("pending"):
