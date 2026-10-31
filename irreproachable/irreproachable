@@ -1551,6 +1551,12 @@ exec "{REAL_PASEO}" "$@"
         for aid in CREATED:
             subprocess.run(["paseo", "delete", aid], capture_output=True)
         subprocess.run(["paseo", "workspace", "archive", WS], capture_output=True)
+        try:                                    # archiving leaves the project registered; delete it too
+            for pr in paseo("project", "ls"):
+                if os.path.realpath(pr.get("path", "")) == os.path.realpath(T):
+                    subprocess.run(["paseo", "project", "delete", pr["projectId"]], capture_output=True)
+        except (PaseoError, KeyError, TypeError) as e:
+            check("the selftest's Paseo project was deleted", False, e)
         leftover = serve_pid()
         check("no private serve is left running", leftover is None, leftover)
         shutil.rmtree(T, ignore_errors=True)
