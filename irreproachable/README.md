@@ -26,8 +26,10 @@ has at most one goal, so editing a goal is running `new` again: it replaces the 
 
 - **Goal prompt**: the goal again, once the agent has sat idle `--idle-after` (default 1m). While one of the
   agent's pacemaker runs is watched, the wait is 21m instead (pacemaker pings at least every 1200s).
-- **Steer**: every `--steer-every` (default 30m), a progress-and-discipline check with the goal, sent once the
-  agent is idle. A busy agent is never messaged: a message queued into a running Claude turn can wedge that turn.
+- **Steer**: every `--steer-every` (default 30m), a progress-and-discipline check with the goal. It **interrupts a
+  busy agent** (`paseo send --behavior interrupt`), so it lands at once as a turn of its own; Claude Code moves the
+  running command to the background rather than killing it. Queuing it into the running turn instead wedged long
+  turns.
 
 Nothing is sent while the agent has a pending permission request. `mute [DURATION]` holds goal prompts (not
 steers) for up to 1h; `unmute` ends it at once.

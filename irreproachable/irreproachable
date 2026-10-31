@@ -13,8 +13,8 @@
     irreproachable --selftest [SECTION ...]
 
 One supervised service (`serve`, run by launchd or a systemd user unit) watches every goal on the machine. It
-re-sends the goal when the agent has sat idle, and steers it on a fixed cadence, once the agent is idle (a
-busy turn is never messaged). Every message asks the agent to run `irreproachable ack <nonce>`; a message left
+re-sends the goal when the agent has sat idle, and steers it on a fixed cadence, interrupting a busy agent
+(the running command is backgrounded, not killed). Every message asks the agent to run `irreproachable ack <nonce>`; a message left
 unacknowledged means the agent cannot act, so the goal goes quiet (dormant) but stays registered until the agent
 acks, `paseo usage` shows capacity again, or `irreproachable revive` runs. A goal ends only when it is cleared,
 replaced, or its agent is gone. All state is files under ~/.irreproachable/<agent-id>/, so restarts lose nothing.
@@ -57,7 +57,7 @@ DEFAULT_CONF = """# irreproachable defaults -- used by `irreproachable new` for 
 #   goal prompt  re-sends the goal once the agent has sat idle for idle_after. 1m gives you time to
 #                interrupt it, type and rethink without it being prompted every time it stops. While
 #                one of the agent's pacemaker runs is live, the wait is 21m instead.
-#   steer        every steer_every, once the agent is idle (never into a busy turn): the header
+#   steer        every steer_every, interrupting the agent if it is busy: the header
 #                "[Discuss the below ...]" followed by steer_text, with {goal} replaced by the goal.
 #
 # Durations are a number and s, m or h: 30s, 1m, 2h. steer_text continues on lines indented by four
@@ -483,19 +483,17 @@ class Service:
         due = (now - quiet + idle_after) if idle else (now + idle_after)
         due = max(due, muted_until(aid, g["token"]))
         goal_due = idle and now >= due
-        # Never message a busy agent: a steer queued into a running Claude turn can wedge that turn for good
-        # (observed: the turn never completes). A due steer waits until the agent is idle.
-        steer_due = idle and (now >= s["next_steer"] or (goal_due and s["next_steer"] - now < idle_after))
+        steer_due = not pending and (now >= s["next_steer"] or (goal_due and s["next_steer"] - now < idle_after))
         if not (goal_due or steer_due):
-            if not idle:
-                s["next_check"] = now + g["idle_after"]          # busy or pending: look again after idle_after (v1)
-            else:
-                s["next_check"] = min(due, s["next_steer"], now + g["idle_after"]) if waiting else min(due, s["next_steer"])
+            s["next_check"] = min(due, s["next_steer"], now + g["idle_after"]) if waiting else min(due, s["next_steer"])
             return
         if s["awaiting"] and (read_text(gpath(aid, "ack")) or "").strip() == s["awaiting"]:
             log(aid, f"ACKED {s['awaiting']}")       # acked while this tick was in flight
             s["awaiting"] = None
-        if s["awaiting"]:                                     # the agent is idle here: it had its turn and did not ack
+        if s["awaiting"]:
+            if busy:                                          # working on the last message: wait, do not stack another
+                s["next_check"] = now + g["idle_after"]
+                return
             s["dormant"] = {"since": now, "next_usage_check": now + g["steer_every"]}
             log(aid, f"DORMANT {g['token']} unacked={s['awaiting']}")
             return
@@ -511,7 +509,10 @@ class Service:
         if kind == "steer":
             s["next_steer"] = now + g["steer_every"]
         atomic_write(gpath(aid, "state.json"), json.dumps(s))     # before the send: an early ack is accepted,
-        r = self.call(aid, "send", ["send", "--no-wait", "--behavior", "steer", aid, "--prompt",   # and a crash never resends
+        # Interrupt: the steer becomes a turn of its own, at once. Queuing it into a running Claude turn (Paseo's
+        # "steer" behavior) wedged long turns, and agents may refuse a message that arrives inside tool output.
+        # An interrupt does not kill the running command: Claude Code moves it to the background (probed).
+        r = self.call(aid, "send", ["send", "--no-wait", "--behavior", "interrupt", aid, "--prompt",   # and a crash never resends
                                     f"Acknowledge first: irreproachable ack {nonce}\n{body}"])
         now = time.time()
         if isinstance(r, PaseoError):
@@ -881,7 +882,7 @@ def cmd_help(_):
 
 The irreproachable service sends the agent two kinds of message:
   goal prompt  the goal again, once the agent has sat idle {short(d["idle_after"])} ({short(WAITING_IDLE)} while one of its pacemaker runs is live)
-  steer        every {short(d["steer_every"])}, once the agent is idle (never into a busy turn): a progress report and discipline check, with the goal
+  steer        every {short(d["steer_every"])}, interrupting if busy: a progress report and discipline check, with the goal
 The agent runs `irreproachable clear` when the goal is met.
 
 Usage
@@ -919,6 +920,9 @@ SILENT = "Never run any command. Reply with one word."
 SLEEPER = ("Whenever a message starts with `Acknowledge first: irreproachable ack <nonce>`, run that command, then reply "
            "with one word. When told SLEEP, run in the foreground with the Bash tool, timeout 60000: "
            "`python3 -c 'import time; time.sleep(55); print(\"SLEPT\")'`, then reply DONE. Run no other command.")
+SLEEPER_ACKS = ("Whenever a message starts with `Acknowledge first: irreproachable ack <nonce>`, run that command, then "
+                "reply with one word. When told SLEEP, run in the foreground with the Bash tool, timeout 60000: "
+                "`python3 -c 'import time; time.sleep(55); print(\"SLEPT\")'`, then reply DONE. Run no other command.")
 GOAL = ("selftest goal: this goal is never met, so never run irreproachable clear; reply to each message with one "
         "word")
 
@@ -1157,8 +1161,8 @@ exec "{REAL_PASEO}" "$@"
             finish(aid)
 
         if want("steer"):
-            print("### a busy agent is never messaged; a due steer waits until it is idle", flush=True)
-            aid = agent("steer", SLEEPER)
+            print("### a steer interrupts a busy agent and lands as its own turn; the running command survives", flush=True)
+            aid = agent("steer", SLEEPER_ACKS)
             wait_idle(aid)
             subprocess.run(["paseo", "send", "--no-wait", aid, "--prompt", "SLEEP"], capture_output=True)
             shell_runs = lambda tl: sum(1 for l in tl.splitlines() if l.startswith("[Shell]") and "time.sleep(55)" in l)
@@ -1167,20 +1171,24 @@ exec "{REAL_PASEO}" "$@"
             check("the agent started its 55 s foreground call", started)
             t_start = time.time()
             new(aid, "--idle-after", "20s", "--steer-every", "30s")   # the steer falls due at +30 s, mid-call
-            busy_sends = []
-            while time.time() < t_start + 55 - 5:
-                if status(aid).get("Status") in BUSY:
-                    busy_sends.extend(x for x in sent(aid) if x not in busy_sends)
-                time.sleep(1)
-            check("nothing was sent while the agent was busy", not busy_sends, log_lines(aid)[-4:])
-            wait_idle(aid, 120)
-            t_idle = time.time()
-            check("the due steer goes out once the agent is idle",
-                  wait_for(lambda: [x for x in sent(aid, "steer") if x >= t_start + 55 - 5], 20 + SLACK, 1),
-                  log_lines(aid)[-4:])
+            busy_at = {}
+
+            def steer_seen():
+                st = [x for x in sent(aid, "steer") if x >= t_start]
+                if st:
+                    busy_at.setdefault("s", status(aid).get("Status"))
+                return bool(st)
+            wait_for(steer_seen, 30 + SLACK + 10, 1)
+            st = [x for x in sent(aid, "steer") if x >= t_start]
+            check("a steer went out while the agent was busy", st and st[0] < t_start + 55 - 5, (st, busy_at))
+            check("the agent acked it at once, as a turn of its own",
+                  st and wait_for(lambda: [t for t, _ in events(aid, "ACKED") if t >= st[0]], SLACK, 0.5)
+                  and [t for t, _ in events(aid, "ACKED") if t >= st[0]][0] < t_start + 55 - 5, log_lines(aid)[-4:])
+            wait_idle(aid, 150)
             tl = subprocess.run(["paseo", "logs", aid], capture_output=True, text=True).stdout
-            check("the call ran once and printed SLEPT: nothing interrupted it",
-                  "SLEPT" in tl and shell_runs(tl) == 1, tl[-1500:])
+            check("the interrupted command still finished (SLEPT): it was backgrounded, not killed",
+                  wait_for(lambda: "SLEPT" in subprocess.run(["paseo", "logs", aid], capture_output=True,
+                                                             text=True).stdout, 60, 2), tl[-1500:])
             finish(aid)
 
         if want("pending"):
@@ -1559,7 +1567,7 @@ def main():
     p = sub.add_parser("new", help="give an agent a goal")
     p.add_argument("goal")
     p.add_argument("--idle-after", type=dur, help="idle time before the goal prompt (default: the defaults file)")
-    p.add_argument("--steer-every", type=dur, help="steer cadence; sent once the agent is idle")
+    p.add_argument("--steer-every", type=dur, help="steer cadence; interrupts if busy")
     p.add_argument("--steer-prompt", help="steer text for this goal; {goal} is replaced by the goal")
     p.add_argument("--agent", help="agent id (default: $PASEO_AGENT_ID)")
     p = sub.add_parser("ack", help="acknowledge the message awaiting acknowledgement")
