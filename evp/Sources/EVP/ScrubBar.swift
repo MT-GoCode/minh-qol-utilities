@@ -9,6 +9,9 @@ final class ScrubBar: NSView {
     }
     var duration = 0.0
     var onSeek: ((Double) -> Void)?
+    /// The pointer moved over the strip: the fraction under it and the screen point at the top of the strip there.
+    /// nil when it leaves.
+    var onHover: (((fraction: Double, top: NSPoint)?) -> Void)?
 
     private static let trackY: CGFloat = 6
     private static let trackHeight: CGFloat = 4
@@ -46,6 +49,7 @@ final class ScrubBar: NSView {
     override func mouseExited(with event: NSEvent) {
         hoverX = nil
         hoverText = ""
+        onHover?(nil)
     }
     override func mouseDown(with event: NSEvent) { hover(event); seek(event) }
     override func mouseDragged(with event: NSEvent) { hover(event); seek(event) }
@@ -54,8 +58,10 @@ final class ScrubBar: NSView {
 
     private func hover(_ event: NSEvent) {
         let x = position(event)
+        let fraction = ScrubMath.fraction(x: x, width: bounds.width)
         hoverX = x
-        hoverText = ScrubMath.tooltip(fraction: ScrubMath.fraction(x: x, width: bounds.width), duration: duration)
+        hoverText = ScrubMath.tooltip(fraction: fraction, duration: duration)
+        if let window { onHover?((fraction, window.convertPoint(toScreen: convert(NSPoint(x: x, y: bounds.maxY), to: nil)))) }
     }
 
     private func seek(_ event: NSEvent) { onSeek?(ScrubMath.fraction(x: position(event), width: bounds.width)) }

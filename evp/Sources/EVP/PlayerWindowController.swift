@@ -11,6 +11,11 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Called when this window starts or stops playing.
     var onPlayingChanged: (() -> Void)?
     private(set) var isPlaying = false
+    private var duration = 0.0
+    /// Thumbnails for hovering the strip; made on the first hover, so a window never hovered runs no second decoder.
+    private var preview: FramePreview?
+    private let bubble = PreviewBubble()
+    private var hoverTop: NSPoint?
     private let player: MpvPlayer
     private let content: PlayerContentView
     private let id: UUID
@@ -54,6 +59,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         window.handleKey = { [weak self] in self?.handleKey($0) ?? false }
         bar.onCommand = { [weak self] in self?.perform($0) }
         bar.trackItems = { [weak self] kind in try self?.trackItems(kind) ?? [] }
+        bar.onScrubHover = { [weak self] in self?.scrubHovered($0) }
         let memory = FileMemory(store: store, file: request.file)
         player.onEvent = { [weak self] event in
             guard let self else { return }
@@ -91,6 +97,8 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         withExtendedLifetime(self) {
             // Detaching the video output makes mpv end the file with an error; a closing window must not report it.
             player.onEvent = nil
+            bubble.hide()
+            preview = nil
             video.shutdown()
             session.closed(id)
             isPlaying = false
@@ -106,6 +114,30 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     func trackItems(_ kind: Track.Kind) throws -> [TrackMenuItem] { TrackMenu.items(for: kind, in: try player.tracks()) }
 
     func select(_ kind: Track.Kind, trackID: Int?) { perform(.selectTrack(kind, trackID)) }
+
+    private func scrubHovered(_ hover: (fraction: Double, top: NSPoint)?) {
+        guard let hover, duration > 0 else {
+            hoverTop = nil
+            return bubble.hide()
+        }
+        hoverTop = hover.top
+        do {
+            if preview == nil {
+                let made = try FramePreview(file: URL(fileURLWithPath: path))
+                made.onFrame = { [weak self] _, jpeg in self?.thumbnailReady(jpeg) }
+                made.onError = { [weak self] in self?.bar.showFeedback("Preview: \($0.localizedDescription)") }
+                preview = made
+            }
+            preview?.show(hover.fraction * duration)
+        } catch {
+            bar.showFeedback("Preview: \(error.localizedDescription)")
+        }
+    }
+
+    private func thumbnailReady(_ jpeg: Data) {
+        guard let hoverTop, let window else { return }
+        bubble.show(jpeg, above: hoverTop, in: window)
+    }
 
     /// What the global pause key acts on.
     var pausable: Pausable { player }
@@ -173,7 +205,9 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         switch event {
         case .loadFailed(let error): fail(error)
         case .time(let seconds): bar.setTime(seconds)
-        case .duration(let seconds): bar.setDuration(seconds)
+        case .duration(let seconds):
+            duration = seconds
+            bar.setDuration(seconds)
         case .paused(let paused):
             bar.setPaused(paused)
             isPlaying = !paused

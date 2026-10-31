@@ -28,11 +28,12 @@ public struct MediaKeyRouter {
 
     public init() {}
 
-    /// With decoupling on, EVP never touches the keys. With it off, EVP takes them only while something is playing, so
-    /// an idle EVP does not steal the keys from the music app: F8 plays and pauses, F7 and F9 seek by the long step.
-    public mutating func decide(_ key: MediaKey, isKeyDown: Bool, decoupled: Bool, anythingPlaying: Bool) -> Decision {
+    /// With decoupling on, EVP never touches the keys. With it off, EVP takes them while a video is open, playing or
+    /// paused (F8 must resume what it paused): F8 plays and pauses, F7 and F9 seek by the long step. With no video open
+    /// the keys stay with the music app.
+    public mutating func decide(_ key: MediaKey, isKeyDown: Bool, decoupled: Bool, videoOpen: Bool) -> Decision {
         guard isKeyDown else { return taken.remove(key) == nil ? .pass : .consume(nil) }
-        guard !decoupled, anythingPlaying else { return .pass }
+        guard !decoupled, videoOpen else { return .pass }
         taken.insert(key)
         switch key {
         case .playPause: return .consume(.playPause)

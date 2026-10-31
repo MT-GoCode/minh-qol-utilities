@@ -63,7 +63,7 @@ final class EventTapRoute {
               let key = MediaKey(systemKeyType: (system.data1 & 0xFFFF0000) >> 16) else { return pass }
         let isDown = ((system.data1 & 0xFF00) >> 8) == 0xA
         let isRepeat = system.data1 & 0x1 != 0
-        switch router.decide(key, isKeyDown: isDown, decoupled: decoupled(), anythingPlaying: target() != nil) {
+        switch router.decide(key, isKeyDown: isDown, decoupled: decoupled(), videoOpen: target() != nil) {
         case .pass:
             return pass
         case .consume(let action):

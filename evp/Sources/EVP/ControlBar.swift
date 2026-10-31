@@ -29,6 +29,11 @@ final class ControlBar: NSView {
     var onCommand: ((Command) -> Void)?
     /// The lines of the audio or subtitle menu, asked for each time one opens.
     var trackItems: ((Track.Kind) throws -> [TrackMenuItem])?
+    /// The pointer over the progress strip (see `ScrubBar.onHover`).
+    var onScrubHover: (((fraction: Double, top: NSPoint)?) -> Void)? {
+        get { scrub.onHover }
+        set { scrub.onHover = newValue }
+    }
 
     private let scrub = ScrubBar()
     private let timeField = TimeField()

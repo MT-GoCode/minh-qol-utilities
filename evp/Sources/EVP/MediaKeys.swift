@@ -3,20 +3,22 @@ import Foundation
 import MediaPlayer
 
 /// F7, F8 and F9 through the system's remote-command centre, which needs no permission. The system sends them here only
-/// while this app publishes now-playing information, so EVP publishes it only while a window is playing and the keys are
-/// not decoupled. Decoupled, or with nothing playing, the keys go to whatever else wants them.
+/// while this app publishes now-playing information, so EVP publishes it while a video is open (playing or paused, so F8
+/// resumes what it paused) and the keys are not decoupled. Decoupled, or with no video open, the keys go to whatever
+/// else wants them.
 final class MediaKeys {
     private let center = MPRemoteCommandCenter.shared()
     private let decoupled: () -> Bool
     /// The window the keys act on: nil when no window is playing.
     private let target: () -> PlayerWindowController?
     private var commands: [MPRemoteCommand] {
-        [center.togglePlayPauseCommand, center.pauseCommand, center.previousTrackCommand, center.nextTrackCommand]
+        [center.togglePlayPauseCommand, center.playCommand, center.pauseCommand, center.previousTrackCommand, center.nextTrackCommand]
     }
 
     init(decoupled: @escaping () -> Bool, target: @escaping () -> PlayerWindowController?) {
         (self.decoupled, self.target) = (decoupled, target)
-        let actions: [Action] = [.playPause, .playPause, .seekBackLong, .seekForwardLong]
+        // The system sends play while EVP reports paused and pause while it reports playing, so each one toggles.
+        let actions: [Action] = [.playPause, .playPause, .playPause, .seekBackLong, .seekForwardLong]
         for (command, action) in zip(commands, actions) {
             command.addTarget { [weak self] _ in self?.run(action) ?? .noActionableNowPlayingItem }
         }
@@ -33,10 +35,16 @@ final class MediaKeys {
 
     /// Call whenever a window starts or stops playing, opens or closes, or the decoupling changes.
     func refresh() {
-        let active = !decoupled() && target() != nil
-        commands.forEach { $0.isEnabled = active }
+        let window = decoupled() ? nil : target()
+        commands.forEach { $0.isEnabled = window != nil }
         let info = MPNowPlayingInfoCenter.default()
-        info.nowPlayingInfo = active ? [MPMediaItemPropertyTitle: "Ergonomic Video Player", MPNowPlayingInfoPropertyPlaybackRate: 1.0] : nil
-        info.playbackState = active ? .playing : .stopped
+        guard let window else {
+            info.nowPlayingInfo = nil
+            info.playbackState = .stopped
+            return
+        }
+        let playing = window.isPlaying
+        info.nowPlayingInfo = [MPMediaItemPropertyTitle: "Ergonomic Video Player", MPNowPlayingInfoPropertyPlaybackRate: playing ? 1.0 : 0.0]
+        info.playbackState = playing ? .playing : .paused
     }
 }
