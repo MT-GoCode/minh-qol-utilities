@@ -1183,7 +1183,8 @@ exec "{REAL_PASEO}" "$@"
                                                                  text=True).stdout) >= 1, 60, 1)
             check("the agent started its 55 s foreground call", started)
             t_start = time.time()
-            new(aid, "--idle-after", "20s", "--steer-every", "30s")   # the steer falls due at +30 s, mid-call
+            # the steer falls due at +40 s, mid-call; the hold after it (one interval) outlasts the call's last 15 s
+            new(aid, "--idle-after", "20s", "--steer-every", "40s")
             busy_at = {}
 
             def steer_seen():
