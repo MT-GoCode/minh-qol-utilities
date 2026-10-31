@@ -1001,9 +1001,12 @@ exec "{REAL_PASEO}" "$@"
         return bool(pred())
 
     def agent(title, prompt, mode="bypassPermissions"):
+        # A SILENT agent must never ack, but Minh's doctrine tells every agent to run the ack line, which can beat
+        # its prompt. So its acks go to an empty home of their own and can never reach the goal: exact, not hoped for.
+        home_env = os.path.join(T, "nowhere") if prompt == SILENT else HOMEDIR
         aid = paseo("run", "--no-wait", "--workspace", WS, "--title", f"irr-selftest-{title}",
                     "--provider", "claude/haiku", "--mode", mode,
-                    "--env", f"IRREPROACHABLE_HOME={HOMEDIR}", "--env", f"PATH={T}/agentbin:{os.environ['PATH']}",
+                    "--env", f"IRREPROACHABLE_HOME={home_env}", "--env", f"PATH={T}/agentbin:{os.environ['PATH']}",
                     prompt)["agentId"]
         CREATED.append(aid)
         return aid
@@ -1247,7 +1250,7 @@ exec "{REAL_PASEO}" "$@"
             k = len([1 for _, c in calls() if c.startswith("usage")])
             wait_for(lambda: len([1 for _, c in calls() if c.startswith("usage")]) > k, 40, 0.5)
             wait_for(lambda: (state(aid).get("dormant") or {}).get("next_usage_check") != before, 10, 0.2)
-            t0 = state(aid)["dormant"]["next_usage_check"]
+            t0 = (state(aid).get("dormant") or {}).get("next_usage_check") or time.time()
             report(win(100, t0 + 25))
             k = len([1 for _, c in calls() if c.startswith("usage")])
             wait_for(lambda: len([1 for _, c in calls() if c.startswith("usage")]) > k, 40, 0.5)
