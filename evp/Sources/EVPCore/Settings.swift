@@ -49,6 +49,8 @@ extension Settings {
         require(volumeStep > 0 && volumeStep <= PlaybackLimits.volume.upperBound, "The volume step must be more than 0 and at most \(Int(PlaybackLimits.volume.upperBound)).")
         require(PlaybackLimits.speed.contains(defaultSpeed), "The default speed must be between \(PlaybackLimits.speed.lowerBound) and \(Int(PlaybackLimits.speed.upperBound)).")
         require(PlaybackLimits.volume.contains(defaultVolume), "The default volume must be between 0 and \(Int(PlaybackLimits.volume.upperBound)).")
+        // A global key without Ctrl, Alt or Cmd would take that key away from every app.
+        require(keymap.chords[.pauseAll].map { !$0.modifiers.subtracting(.shift).isEmpty } ?? true, "The global pause key needs Ctrl, Alt or Cmd.")
         return found
     }
 }

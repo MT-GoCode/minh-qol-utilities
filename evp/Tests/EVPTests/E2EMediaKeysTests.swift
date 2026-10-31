@@ -19,7 +19,7 @@ final class E2EMediaKeysTests: E2ETestCase {
 
         try app!.key("cmd+,")
         try app!.press("setting-decouple")
-        try app!.key("cmd+w")
+        try app!.press("close:Settings")
         try app!.press("play-pause")
         _ = try app!.wait(for: "play-pause") { $0 == "⏸" }
         try app!.key("m")

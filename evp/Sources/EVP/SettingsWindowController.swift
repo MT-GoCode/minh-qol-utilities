@@ -38,7 +38,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     init(store: StateStore, host: SettingsHost) {
         self.store = store
         self.host = host
-        let window = NSWindow(contentRect: NSRect(origin: .zero, size: Self.size), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        // A panel never becomes the main window, so the menus keep acting on the video behind it.
+        let window = NSPanel(contentRect: NSRect(origin: .zero, size: Self.size), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.hidesOnDeactivate = false
         window.title = "Settings"
         window.isReleasedWhenClosed = false
         super.init(window: window)
@@ -68,6 +70,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     /// Accessibility may have been granted in System Settings meanwhile.
     func windowDidBecomeKey(_ notification: Notification) { refresh() }
+
+    /// A recorder left waiting would keep the global hotkey off; leaving the window ends any recording.
+    func windowDidResignKey(_ notification: Notification) { window?.makeFirstResponder(nil) }
+
+    /// Ends any recording and gives the keyboard back to the video behind.
+    func windowWillClose(_ notification: Notification) {
+        window?.makeFirstResponder(nil)
+        NSApp.orderedWindows.first { $0 is PlayerWindow && $0.isVisible }?.makeKey()
+    }
 
     // MARK: Tabs
 
@@ -196,7 +207,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         changeKeymap { try $0.reset(action) }
     }
 
-    @objc private func resetAll() { changeKeymap { $0.resetAll() } }
+    /// Resets this tab's keys; the global key lives on the Global tab and keeps its chord.
+    @objc private func resetAll() {
+        changeKeymap { keymap in
+            let global = keymap.chords[.pauseAll]
+            keymap.resetAll()
+            if let global { try keymap.bind(global, to: .pauseAll) } else { keymap.unbind(.pauseAll) }
+        }
+    }
 
     private func changeKeymap(_ edit: (inout Keymap) throws -> Void) {
         var keymap = store.state.settings.keymap

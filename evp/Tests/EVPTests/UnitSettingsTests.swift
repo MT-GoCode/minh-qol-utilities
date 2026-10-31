@@ -30,4 +30,15 @@ final class UnitSettingsTests: XCTestCase {
         (settings.defaultSpeed, settings.defaultVolume) = (100.5, 100.5)
         XCTAssertEqual(settings.problems().count, 2)
     }
+
+    func testTheGlobalKeyNeedsAModifierThatIsNotShift() throws {
+        var settings = Settings()
+        for (chord, ok) in [("ctrl+space", true), ("alt+p", true), ("cmd+shift+p", true), ("a", false), ("shift+a", false)] {
+            settings.keymap.unbind(.pauseAll)
+            try settings.keymap.bind(try XCTUnwrap(KeyChord(chord)), to: .pauseAll)
+            XCTAssertEqual(settings.problems().isEmpty, ok, chord)
+        }
+        settings.keymap.unbind(.pauseAll)
+        XCTAssertEqual(settings.problems(), [], "no global key at all is allowed")
+    }
 }

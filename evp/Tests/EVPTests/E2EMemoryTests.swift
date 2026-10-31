@@ -9,12 +9,6 @@ final class E2EMemoryTests: E2ETestCase {
         return nil
     }
 
-    private func stateFolder() throws -> URL {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("evp-home-\(UUID().uuidString)")
-        addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
-        return folder
-    }
-
     /// Waits until the app has `count` player windows and returns them, in a stable order.
     private func windows(_ count: Int) throws -> [WindowInfo] {
         let deadline = Date().addingTimeInterval(15)
@@ -26,7 +20,7 @@ final class E2EMemoryTests: E2ETestCase {
     }
 
     func testAKilledAppResumesAtTheSamePositionSpeedAndVolume() throws {
-        let home = try stateFolder()
+        let home = stateFolder()
         let video = try Fixtures.url("tv.mp4").path
         app = try RunningApp.launch([video], home: home)
         _ = try app!.wait(for: "time") { (self.seconds($0) ?? 0) >= 1 }
@@ -49,7 +43,7 @@ final class E2EMemoryTests: E2ETestCase {
     }
 
     func testEveryWindowComesBackAtItsFramePausedAtItsPosition() throws {
-        let home = try stateFolder()
+        let home = stateFolder()
         app = try RunningApp.launch([try Fixtures.url("tv.mp4").path, try Fixtures.url("t.mp4").path], home: home)
         let before = try windows(2)
         sleep(3)  // both videos play, so both leave a position past 0:01
@@ -67,7 +61,7 @@ final class E2EMemoryTests: E2ETestCase {
     }
 
     func testOpeningASavedFileAtLaunchGivesOneWindowNotTwo() throws {
-        let home = try stateFolder()
+        let home = stateFolder()
         let (first, second) = (try Fixtures.url("tv.mp4").path, try Fixtures.url("t.mp4").path)
         app = try RunningApp.launch([first, second], home: home)
         _ = try windows(2)

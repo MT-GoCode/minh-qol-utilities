@@ -22,7 +22,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, Settin
     /// Taken before any open request is handled, so a file opened at launch is not also restored as a second window.
     private var toRestore: [WindowState] = []
     private var missing: [WindowState] = []
-    private var reportedFlushError = false
     private let pauseAll = PauseAll()
     private lazy var hotkey = GlobalHotkey { [weak self] in self?.pauseAllPressed() }
     private var mediaKeys: MediaKeys!
@@ -41,10 +40,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, Settin
     /// file is never replaced.
     func applicationWillFinishLaunching(_ notification: Notification) {
         do {
+            // Shown in every window's bar, not in a modal alert: a modal would stop playback and the engine's events.
             store = try StateStore(directory: Self.stateDirectory) { [weak self] error in
-                guard let self, !self.reportedFlushError else { return }
-                self.reportedFlushError = true
-                NSAlert(error: error).runModal()
+                self?.players.forEach { $0.showFeedback("Not saving: \(error.localizedDescription)") }
             }
         } catch {
             stop("The saved state cannot be read", "\(error.localizedDescription)\n\nThe file is left as it is. Fix or move \(Self.stateDirectory.path)/state.json and start again.")
@@ -56,20 +54,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, Settin
         session = SessionRegistry(store: store)
         if settings.restoreWindowsOnLaunch { (toRestore, missing) = session.windowsToRestore() }
         store.update { $0.windows = [] }
-    }
-
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.mainMenu = MainMenu.make(target: self)
         let decoupled = { [weak self] in self?.settings.decoupleMediaKeys ?? true }
         let target = { [weak self] in self?.playingWindow() }
         mediaKeys = MediaKeys(decoupled: decoupled, target: target)
         eventTap = EventTapRoute(decoupled: decoupled, target: target)
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.mainMenu = MainMenu.make(target: self)
+        // A file opened at launch takes the place of one saved window of that file, not of all of them.
+        var openedAtLaunch = players.map(\.path)
+        for state in toRestore {
+            if let index = openedAtLaunch.firstIndex(of: state.path) {
+                openedAtLaunch.remove(at: index)
+                continue
+            }
+            show(URL(fileURLWithPath: state.path), restoring: state)
+        }
         if !settings.decoupleMediaKeys { eventTap.enable(prompt: false) }
         if let chord = settings.keymap.chords[.pauseAll] {
             do { try hotkey.register(chord) } catch { NSAlert(error: error).runModal() }
-        }
-        for state in toRestore where !players.contains(where: { $0.path == state.path }) {
-            show(URL(fileURLWithPath: state.path), restoring: state)
         }
         if !missing.isEmpty {
             let alert = NSAlert()
@@ -128,8 +132,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, Settin
         return .terminateNow
     }
 
+    /// No alert here: a modal at quit would block a logout or restart. The windows already showed the failure.
     func applicationWillTerminate(_ notification: Notification) {
-        do { try store.flushNow() } catch { NSAlert(error: error).runModal() }
+        do { try store.flushNow() } catch { NSLog("EVP: the last state could not be saved: %@", error.localizedDescription) }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -153,9 +158,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, Settin
         guard let now else {
             hotkey.unregister()
             return nil
-        }
-        guard !now.modifiers.subtracting(.shift).isEmpty else {
-            return "A global key needs Ctrl, Alt or Cmd: \(now) alone would be taken from every app."
         }
         do {
             try hotkey.register(now)

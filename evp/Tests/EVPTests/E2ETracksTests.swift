@@ -14,7 +14,7 @@ final class E2ETracksTests: E2ETestCase {
         app = try RunningApp.launch([try Fixtures.url("sub.mkv").path])
         _ = try app!.wait(for: "time") { !$0.isEmpty }
         let line = try app!.wait(for: "menu-sub-1") { !$0.isEmpty }
-        XCTAssertEqual(line, "English")
+        XCTAssertEqual(line, "English - en.srt", "a sidecar track is named by its language and its file")
         try app!.press("menu-sub-1")
         XCTAssertEqual(try app!.wait(for: "menu-sub-1", attribute: "AXMenuItemMarkChar") { $0 == "✓" }, "✓")
         try app!.press("menu-sub-off")

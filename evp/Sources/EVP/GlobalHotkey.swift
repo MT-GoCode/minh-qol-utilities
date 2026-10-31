@@ -4,10 +4,16 @@ import EVPCore
 /// One system-wide hotkey (Ctrl+Space by default) through Carbon's `RegisterEventHotKey`, which needs no permission.
 /// One instance for the app's lifetime: `register` swaps the chord, the event handler is installed once.
 final class GlobalHotkey {
-    struct RegistrationFailed: Error, LocalizedError {
-        let chord: KeyChord
-        let status: OSStatus
-        var errorDescription: String? { "\(chord) could not be registered as a global hotkey (error \(status)). Another app may own it." }
+    enum RegistrationFailed: Error, LocalizedError {
+        case noKeyCode(KeyChord)
+        case refused(KeyChord, OSStatus)
+
+        var errorDescription: String? {
+            switch self {
+            case .noKeyCode(let chord): return "\(chord) is not a key EVP can register as a global hotkey."
+            case .refused(let chord, let status): return "\(chord) could not be registered as a global hotkey (error \(status)). Another app may own it."
+            }
+        }
     }
 
     private var handler: EventHandlerRef?
@@ -31,14 +37,14 @@ final class GlobalHotkey {
     /// Replaces the registered chord. A chord without a key code, or one the system refuses, throws and leaves none.
     func register(_ chord: KeyChord) throws {
         unregister()
-        guard let code = chord.virtualKeyCode else { throw RegistrationFailed(chord: chord, status: OSStatus(paramErr)) }
+        guard let code = chord.virtualKeyCode else { throw RegistrationFailed.noKeyCode(chord) }
         var modifiers = 0
         if chord.modifiers.contains(.control) { modifiers |= controlKey }
         if chord.modifiers.contains(.option) { modifiers |= optionKey }
         if chord.modifiers.contains(.shift) { modifiers |= shiftKey }
         if chord.modifiers.contains(.command) { modifiers |= cmdKey }
         let status = RegisterEventHotKey(UInt32(code), UInt32(modifiers), EventHotKeyID(signature: 0x45565031, id: 1), GetApplicationEventTarget(), 0, &hotKey)
-        guard status == noErr else { throw RegistrationFailed(chord: chord, status: status) }
+        guard status == noErr else { throw RegistrationFailed.refused(chord, status) }
     }
 
     func unregister() {

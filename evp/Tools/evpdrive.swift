@@ -2,7 +2,7 @@
 // them as `rac exec`; `windows` works from any shell. Built by ./test into .build/evpdrive.
 //   evpdrive windows <pid>               one JSON object per window: {"id":N,"x":..,"y":..,"w":..,"h":..}
 //   evpdrive resize <pid> <width> <height>  move the first window to the top-left, then set its frame size (needs Accessibility)
-//   evpdrive press <pid> <id>            press the button with that accessibility identifier (needs Accessibility)
+//   evpdrive press <pid> <id>            press the button with that accessibility identifier, `title:<title>`, or `close:<window title>` (needs Accessibility)
 //   evpdrive perform <pid> <id> <action>   run the element's accessibility action whose name contains `action`
 //   evpdrive setvalue <pid> <id> <number>  set the element's accessibility value (a slider's position, 0 to 1)
 //   evpdrive type <pid> <text>             type the text (as characters, not key codes)
@@ -10,6 +10,7 @@
 //   evpdrive read <pid> <id> [attribute] print the value, title or description of that element, or the named attribute
 //   evpdrive tree <pid>                  print the accessibility tree (role and identifier), for debugging
 //   evpdrive snapshot <window id> <png>  window-scoped screenshot
+//   evpdrive snapshot-screen <png>       the whole screen, for evidence when a test fails
 //   evpdrive key <pid|hid> <chord> [n]   chord like right, shift+right, j, space, ctrl+space; n presses in a row
 //   evpdrive media <code>...             media keys (16 play/pause, 17 next, 18 previous, 19 fast, 20 rewind)
 import AppKit
@@ -97,11 +98,27 @@ func element(pid: pid_t, id: String) -> AXUIElement {
         var value: CFTypeRef?
         return AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success ? value : nil
     }
-    func search(_ element: AXUIElement) -> AXUIElement? {
-        if attribute(element, "AXIdentifier") as? String == id { return element }
-        return (attribute(element, kAXChildrenAttribute) as? [AXUIElement])?.lazy.compactMap(search).first
+    // The tree can list an ancestor among an element's children (seen with the app element); skip those.
+    func search(_ element: AXUIElement, _ ancestors: [AXUIElement]) -> AXUIElement? {
+        // `title:Keybinds` finds an element by its title, for controls AppKit gives no identifier (tab buttons).
+        let match = id.hasPrefix("title:") ? attribute(element, kAXTitleAttribute) as? String == String(id.dropFirst(6))
+                                           : attribute(element, "AXIdentifier") as? String == id
+        if match { return element }
+        let path = ancestors + [element]
+        return (attribute(element, kAXChildrenAttribute) as? [AXUIElement])?.lazy
+            .filter { child in !path.contains { CFEqual($0, child) } }
+            .compactMap { search($0, path) }.first
     }
-    guard let found = search(AXUIElementCreateApplication(pid)) else { fail("no element \(id) in pid \(pid)") }
+    // `close:Settings` is the close button of the window titled Settings: a background app has no key window, so
+    // Cmd+W reaches no window there.
+    if id.hasPrefix("close:") {
+        let title = String(id.dropFirst(6))
+        let windows = attribute(AXUIElementCreateApplication(pid), kAXWindowsAttribute) as? [AXUIElement] ?? []
+        guard let window = windows.first(where: { attribute($0, kAXTitleAttribute) as? String == title }),
+              let close = attribute(window, kAXCloseButtonAttribute) else { fail("no window titled \(title) with a close button in pid \(pid)") }
+        return close as! AXUIElement
+    }
+    guard let found = search(AXUIElementCreateApplication(pid), []) else { fail("no element \(id) in pid \(pid)") }
     return found
 }
 
@@ -110,13 +127,16 @@ func tree(pid: pid_t) {
         var value: CFTypeRef?
         return AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success ? value : nil
     }
-    func walk(_ element: AXUIElement, depth: Int) {
+    func walk(_ element: AXUIElement, _ ancestors: [AXUIElement]) {
         let role = attribute(element, kAXRoleAttribute) as? String ?? "?"
         let id = attribute(element, "AXIdentifier") as? String ?? ""
-        print(String(repeating: "  ", count: depth) + role + (id.isEmpty ? "" : " #" + id))
-        (attribute(element, kAXChildrenAttribute) as? [AXUIElement])?.forEach { walk($0, depth: depth + 1) }
+        print(String(repeating: "  ", count: ancestors.count) + role + (id.isEmpty ? "" : " #" + id))
+        let path = ancestors + [element]
+        for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [] where !path.contains(where: { CFEqual($0, child) }) {
+            walk(child, path)
+        }
     }
-    walk(AXUIElementCreateApplication(pid), depth: 0)
+    walk(AXUIElementCreateApplication(pid), [])
 }
 
 func press(pid: pid_t, id: String) {
@@ -178,6 +198,14 @@ func read(pid: pid_t, id: String, attribute: String?) {
     fail("\(id) has no value, title or description")
 }
 
+func screen(to path: String) {
+    let shot = Process()
+    shot.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+    shot.arguments = ["-x", path]
+    do { try shot.run() } catch { fail("could not start screencapture: \(error)") }
+    shot.waitUntilExit()
+}
+
 func snapshot(window: Int, to path: String) {
     let shot = Process()
     shot.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
@@ -199,6 +227,7 @@ case "type" where args.count == 3: typeText(pid: pid_t(int(args[1])), text: args
 case "focus" where args.count == 3: focus(pid: pid_t(int(args[1])), id: args[2])
 case "read" where args.count == 3 || args.count == 4: read(pid: pid_t(int(args[1])), id: args[2], attribute: args.count == 4 ? args[3] : nil)
 case "snapshot" where args.count == 3: snapshot(window: int(args[1]), to: args[2])
+case "snapshot-screen" where args.count == 2: screen(to: args[1])
 case "key" where args.count >= 3: postKey(target: parseTarget(args[1]), chord: args[2], count: args.count > 3 ? int(args[3]) : 1)
 case "media" where args.count >= 2: args.dropFirst().forEach { postMedia(int($0)) }
 default: fail("usage: evpdrive windows <pid> | resize <pid> <w> <h> | press <pid> <id> | perform <pid> <id> <action> | setvalue <pid> <id> <number> | type <pid> <text> | focus <pid> <id> | read <pid> <id> [attribute] | snapshot <window id> <png> | key <pid|hid> <chord> [n] | media <code>...")

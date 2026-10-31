@@ -86,7 +86,20 @@ class E2ETestCase: XCTestCase {
         try RunningApp.stopLeftovers(of: Paths.app)
     }
 
-    override func tearDownWithError() throws { try app?.terminate() }
+    private var stateFolders: [URL] = []
+
+    /// A state folder for a test that quits or kills the app and starts it again. It is removed after the app has
+    /// quit: teardown blocks run before `tearDownWithError`, and an app whose folder vanished cannot save.
+    func stateFolder() -> URL {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("evp-home-\(UUID().uuidString)")
+        stateFolders.append(folder)
+        return folder
+    }
+
+    override func tearDownWithError() throws {
+        defer { stateFolders.forEach { try? FileManager.default.removeItem(at: $0) } }
+        try app?.terminate()
+    }
 
     /// Keeps the screenshot a test just analysed, so the results folder shows exactly what was judged.
     func saveToResults(_ name: String, _ pixels: Pixels) throws {
@@ -165,11 +178,25 @@ final class RunningApp {
     }
 
     func terminate() throws {
+        let asked = Date()
         application.terminate()
-        let deadline = Date().addingTimeInterval(5)
+        let deadline = asked.addingTimeInterval(5)
         while !application.isTerminated, Date() < deadline { Self.spin() }
+        guard application.isTerminated else {
+            // Evidence for the failure: what was on screen, which windows the app had, and whether it quit late.
+            let shot = Paths.results.appendingPathComponent("did-not-quit-\(UUID().uuidString.prefix(8)).png")
+            let windows = (try? driver(["windows", String(application.processIdentifier)])) ?? "no windows listed"
+            _ = try? driver(["snapshot-screen", shot.path], asApp: true)
+            for line in windows.split(separator: "\n") where line.contains(#""w":260"#) {
+                guard let id = line.split(separator: ",").first?.split(separator: ":").last else { continue }
+                _ = try? driver(["snapshot", String(id), Paths.results.appendingPathComponent("did-not-quit-window-\(id).png").path], asApp: true)
+            }
+            let late = Date().addingTimeInterval(15)
+            while !application.isTerminated, Date() < late { Self.spin() }
+            try? FileManager.default.removeItem(at: scratch)
+            throw Failure(description: "EVP did not quit within 5 s of being asked (\(application.isTerminated ? "it quit after \(Int(Date().timeIntervalSince(asked))) s" : "still running after 20 s")); windows:\n\(windows)screen: \(shot.path)")
+        }
         try? FileManager.default.removeItem(at: scratch)
-        guard application.isTerminated else { throw Failure(description: "EVP did not quit when asked") }
     }
 
     /// Kills the app the way a crash or a power cut would: no quit handlers run.

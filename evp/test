@@ -24,8 +24,9 @@ export EVP_RESULTS="$PWD/$RUN"
 status=0
 if [ $# -eq 0 ]; then
   swift test --parallel --skip E2E --xunit-output "$RUN/xunit.xml" 2>&1 | tee "$RUN/log.txt" || status=$?
-  swift test --parallel --num-workers 1 --filter E2E --xunit-output "$RUN/xunit-e2e.xml" 2>&1 | tee -a "$RUN/log.txt" || status=$?
+  # E2E reads real windows: with the display asleep (or the screen locked) accessibility and screenshots go dark.
+  caffeinate -d swift test --parallel --num-workers 1 --filter E2E --xunit-output "$RUN/xunit-e2e.xml" 2>&1 | tee -a "$RUN/log.txt" || status=$?
 else
-  swift test --xunit-output "$RUN/xunit.xml" "$@" 2>&1 | tee "$RUN/log.txt" || status=$?
+  caffeinate -d swift test --xunit-output "$RUN/xunit.xml" "$@" 2>&1 | tee "$RUN/log.txt" || status=$?
 fi
 exit "$status"

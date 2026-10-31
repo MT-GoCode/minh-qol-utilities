@@ -248,6 +248,7 @@ final class CommandButton: NSButton {
     convenience init(symbol: String, label: String, command: Command, id: String) {
         self.init(title: "", command: command, id: id)
         image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+        imagePosition = .imageOnly
         toolTip = label
     }
 
@@ -263,6 +264,7 @@ final class TrackButton: NSButton {
         super.init(frame: .zero)
         title = ""
         image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+        imagePosition = .imageOnly
         toolTip = label
         bezelStyle = .accessoryBarAction
         setAccessibilityIdentifier(id)
