@@ -65,4 +65,17 @@ final class E2EMemoryTests: E2ETestCase {
         XCTAssertEqual(try app!.read("play-pause"), "▶", "a restored window waits paused, so reopening is silent")
         _ = try app!.wait(for: "time") { (self.seconds($0) ?? 0) >= 1 }
     }
+
+    func testOpeningASavedFileAtLaunchGivesOneWindowNotTwo() throws {
+        let home = try stateFolder()
+        let (first, second) = (try Fixtures.url("tv.mp4").path, try Fixtures.url("t.mp4").path)
+        app = try RunningApp.launch([first, second], home: home)
+        _ = try windows(2)
+        try app!.terminate()
+
+        app = try RunningApp.launch([first], home: home)
+        _ = try windows(2)
+        sleep(2)  // a duplicate would open after the restore loop
+        XCTAssertEqual(try app!.playerWindows().count, 2, "the file opened at launch was restored a second time")
+    }
 }

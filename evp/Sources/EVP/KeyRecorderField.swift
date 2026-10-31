@@ -6,8 +6,13 @@ import EVPCore
 final class KeyRecorderField: NSButton {
     var onChord: ((KeyChord) -> Void)?
     var onClear: (() -> Void)?
+    /// Told when recording starts and stops.
+    var onRecording: ((Bool) -> Void)?
     private var recording = false {
-        didSet { render() }
+        didSet {
+            render()
+            if recording != oldValue { onRecording?(recording) }
+        }
     }
 
     var chord: KeyChord? {

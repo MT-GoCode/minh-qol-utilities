@@ -6,6 +6,8 @@ final class GLVideoView: NSOpenGLView {
     private let player: MpvPlayer
     /// The renderer is attached: the file can be loaded now.
     var onReady: (() -> Void)?
+    /// Between `prepareOpenGL` and `shutdown`: a redraw queued before the window closed must not reach mpv after.
+    private var attached = false
 
     init?(player: MpvPlayer) {
         self.player = player
@@ -25,12 +27,13 @@ final class GLVideoView: NSOpenGLView {
         openGLContext?.setValues(&vsync, for: .swapInterval)
         openGLContext?.makeCurrentContext()
         do { try player.attachRenderer() } catch { preconditionFailure("render context: \(error)") }
+        attached = true
         onReady?()
     }
 
     override func draw(_ dirtyRect: NSRect) {
         let size = convertToBacking(bounds).size
-        guard size.width >= 1, size.height >= 1 else { return }
+        guard attached, size.width >= 1, size.height >= 1 else { return }
         player.render(width: Int32(size.width), height: Int32(size.height))
         openGLContext?.flushBuffer()
         player.didSwap()
@@ -40,5 +43,6 @@ final class GLVideoView: NSOpenGLView {
     func shutdown() {
         openGLContext?.makeCurrentContext()
         player.detachRenderer()
+        attached = false
     }
 }

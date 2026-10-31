@@ -14,7 +14,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     private let player: MpvPlayer
     private let content: PlayerContentView
     private let id: UUID
-    private let path: String
+    let path: String
     private let session: SessionRegistry
     private let restored: Bool
     private let store: StateStore
@@ -80,17 +80,25 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             next = window.cascadeTopLeft(from: point == .zero ? NSPoint(x: window.frame.minX, y: window.frame.maxY) : point)
         }
         showWindow(nil)
+        // A file that failed to open closes its window inside showWindow: it must not be recorded as open.
+        guard window.isVisible else { return next }
         session.opened(WindowState(id: id, path: path, frame: Frame(window.frame), barHidden: content.barHidden))
         return next
     }
 
     func windowWillClose(_ notification: Notification) {
-        video.shutdown()
-        session.closed(id)
-        isPlaying = false
-        onClose?(self)
-        onPlayingChanged?()
+        // `onClose` drops the app's reference to this controller; it must live to the end of this call.
+        withExtendedLifetime(self) {
+            video.shutdown()
+            session.closed(id)
+            isPlaying = false
+            onClose?(self)
+            onPlayingChanged?()
+        }
     }
+
+    /// The settings changed: the bar shows the new seek steps.
+    func settingsChanged() { bar.apply(settings) }
 
     /// The lines of the Audio or Subtitles menu for the file playing here.
     func trackItems(_ kind: Track.Kind) throws -> [TrackMenuItem] { TrackMenu.items(for: kind, in: try player.tracks()) }

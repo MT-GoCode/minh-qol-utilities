@@ -45,6 +45,7 @@ final class ControlBar: NSView {
     private var afterPlay: [Item] = []
     private var farRight: [Item] = []
     private var keepFirst: [Item] = []
+    private var seekItems: [(item: Item, sign: String, step: KeyPath<Settings, Double>)] = []
 
     init(settings: Settings) {
         super.init(frame: .zero)
@@ -65,14 +66,15 @@ final class ControlBar: NSView {
         timeField.onSubmit = { [weak self] in self?.onCommand?(.seek($0)) }
         [scrub, timeField, durationLabel, feedbackLabel, playPause, overflowButton].forEach(addSubview)
 
-        func seek(_ sign: String, _ seconds: Double, _ action: Action, _ id: String) -> Item {
-            let title = "\(sign)\(String(format: "%g", seconds))"
-            return item(CommandButton(title: title, command: .action(action), id: id), width: 40, menuTitle: "Seek \(title) s", command: .action(action))
+        func seek(_ sign: String, _ step: KeyPath<Settings, Double>, _ action: Action, _ id: String) -> Item {
+            let seek = item(CommandButton(title: "", command: .action(action), id: id), width: 40, menuTitle: "", command: .action(action))
+            seekItems.append((seek, sign, step))
+            return seek
         }
-        let back5 = seek("-", settings.seekShortSeconds, .seekBackShort, "back-short")
-        let forward5 = seek("+", settings.seekShortSeconds, .seekForwardShort, "forward-short")
-        let back10 = seek("-", settings.seekLongSeconds, .seekBackLong, "back-long")
-        let forward10 = seek("+", settings.seekLongSeconds, .seekForwardLong, "forward-long")
+        let back5 = seek("-", \.seekShortSeconds, .seekBackShort, "back-short")
+        let forward5 = seek("+", \.seekShortSeconds, .seekForwardShort, "forward-short")
+        let back10 = seek("-", \.seekLongSeconds, .seekBackLong, "back-long")
+        let forward10 = seek("+", \.seekLongSeconds, .seekForwardLong, "forward-long")
         let speed = item(speedButton, width: 52, menuTitle: "Reset Speed", command: .action(.speedReset))
         let volume = item(volumeSlider, width: 96, menuTitle: "Volume Up", command: .action(.volumeUp))
         let fullscreen = item(CommandButton(title: "⛶", command: .action(.fullscreen), id: "fullscreen"), width: 32,
@@ -87,6 +89,16 @@ final class ControlBar: NSView {
         keepFirst = [back5, forward5, back10, forward10, speed, volume, fullscreen, screenshot, subtitles, audio]
         keepFirst.forEach { addSubview($0.view) }
         overflowMenu.items = keepFirst.map(\.menuItem)
+        apply(settings)
+    }
+
+    /// Titles that show a setting: the seek buttons say their step ("-5", "+10").
+    func apply(_ settings: Settings) {
+        for (item, sign, step) in seekItems {
+            let title = "\(sign)\(String(format: "%g", settings[keyPath: step]))"
+            (item.view as? NSButton)?.title = title
+            item.menuItem.title = "Seek \(title) s"
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("ControlBar is created in code") }

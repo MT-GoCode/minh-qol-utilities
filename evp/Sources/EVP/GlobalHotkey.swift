@@ -2,6 +2,7 @@ import Carbon
 import EVPCore
 
 /// One system-wide hotkey (Ctrl+Space by default) through Carbon's `RegisterEventHotKey`, which needs no permission.
+/// One instance for the app's lifetime: `register` swaps the chord, the event handler is installed once.
 final class GlobalHotkey {
     struct RegistrationFailed: Error, LocalizedError {
         let chord: KeyChord
@@ -9,6 +10,7 @@ final class GlobalHotkey {
         var errorDescription: String? { "\(chord) could not be registered as a global hotkey (error \(status)). Another app may own it." }
     }
 
+    private var handler: EventHandlerRef?
     private var hotKey: EventHotKeyRef?
     private let onPress: () -> Void
 
@@ -18,12 +20,15 @@ final class GlobalHotkey {
         InstallEventHandler(GetApplicationEventTarget(), { _, _, data in
             Unmanaged<GlobalHotkey>.fromOpaque(data!).takeUnretainedValue().onPress()
             return noErr
-        }, 1, &spec, Unmanaged.passUnretained(self).toOpaque(), nil)
+        }, 1, &spec, Unmanaged.passUnretained(self).toOpaque(), &handler)
     }
 
-    deinit { unregister() }
+    deinit {
+        unregister()
+        if let handler { RemoveEventHandler(handler) }
+    }
 
-    /// Replaces the registered chord. A chord without a key code, or one the system refuses, throws.
+    /// Replaces the registered chord. A chord without a key code, or one the system refuses, throws and leaves none.
     func register(_ chord: KeyChord) throws {
         unregister()
         guard let code = chord.virtualKeyCode else { throw RegistrationFailed(chord: chord, status: OSStatus(paramErr)) }

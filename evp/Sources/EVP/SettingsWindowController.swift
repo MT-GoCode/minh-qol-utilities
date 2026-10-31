@@ -1,10 +1,22 @@
 import AppKit
 import EVPCore
 
+/// What the Settings window needs from the app beyond the stored settings.
+protocol SettingsHost: AnyObject {
+    /// The reliable media keys' state, as shown ("Active", "Needs Accessibility", ...).
+    var tapStatus: String { get }
+    func enableTap()
+    /// A refusal to show, or nil to store the change. Called before the change is stored.
+    func accept(from old: Settings, to new: Settings) -> String?
+    /// Called after a change is stored.
+    func settingsChanged(from old: Settings, to new: Settings)
+    func holdGlobalHotkey(_ held: Bool)
+}
+
 /// Settings (Cmd+,) in three tabs: General, Keybinds, Global. Each change is checked (`Settings.problems()`, the
-/// keymap's conflict rule) and written to the store, so windows read it on their next event. A change that does not
-/// pass is refused with the reason, and the controls go back to what is stored.
-final class SettingsWindowController: NSWindowController {
+/// keymap's conflict rule, the host) and only then stored, so windows read it on their next event. A refused change
+/// shows the reason and the controls go back to what is stored.
+final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private final class NumberField: NSTextField {
         var keyPath: WritableKeyPath<Settings, Double>!
     }
@@ -13,26 +25,24 @@ final class SettingsWindowController: NSWindowController {
         var keyPath: WritableKeyPath<Settings, Bool>!
     }
 
+    private static let size = NSSize(width: 560, height: 560)
+
     private let store: StateStore
-    private let onChange: (_ old: Settings, _ new: Settings) -> Void
-    private let tapStatus: () -> String
-    private let enableTap: () -> Void
-    private let tapLabel = NSTextField(labelWithString: "")
+    private weak var host: SettingsHost?
     private let message = NSTextField(wrappingLabelWithString: "")
+    private let tapLabel = NSTextField(labelWithString: "")
     private var numbers: [NumberField] = []
     private var toggles: [Toggle] = []
     private var recorders: [Action: KeyRecorderField] = [:]
 
-    init(store: StateStore, tapStatus: @escaping () -> String, enableTap: @escaping () -> Void,
-         onChange: @escaping (_ old: Settings, _ new: Settings) -> Void) {
+    init(store: StateStore, host: SettingsHost) {
         self.store = store
-        self.tapStatus = tapStatus
-        self.enableTap = enableTap
-        self.onChange = onChange
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 520), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        self.host = host
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: Self.size), styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Settings"
         window.isReleasedWhenClosed = false
         super.init(window: window)
+        window.delegate = self
 
         let tabs = NSTabView()
         for (title, content) in [("General", generalTab()), ("Keybinds", keybindsTab()), ("Global", globalTab())] {
@@ -47,16 +57,22 @@ final class SettingsWindowController: NSWindowController {
         root.orientation = .vertical
         root.alignment = .leading
         root.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
+        tabs.widthAnchor.constraint(equalToConstant: Self.size.width - 24).isActive = true
+        tabs.heightAnchor.constraint(equalToConstant: Self.size.height - 80).isActive = true
         window.contentView = root
+        window.center()
         refresh()
     }
 
     required init?(coder: NSCoder) { fatalError("SettingsWindowController is created in code") }
 
+    /// Accessibility may have been granted in System Settings meanwhile.
+    func windowDidBecomeKey(_ notification: Notification) { refresh() }
+
     // MARK: Tabs
 
     private func generalTab() -> NSView {
-        let rows: [NSView] = [
+        column([
             toggle("Keep the media keys (F7, F8, F9) out of EVP", id: "setting-decouple", \.decoupleMediaKeys),
             toggle("Reopen the windows of the last session at launch", id: "setting-restore", \.restoreWindowsOnLaunch),
             tapRow(),
@@ -66,40 +82,35 @@ final class SettingsWindowController: NSWindowController {
             number("Volume step", id: "setting-volumeStep", \.volumeStep),
             number("Speed of a file never opened before", id: "setting-defaultSpeed", \.defaultSpeed),
             number("Volume of a file never opened before", id: "setting-defaultVolume", \.defaultVolume),
-        ]
-        return column(rows)
-    }
-
-    /// Reliable media keys need the Accessibility permission; this row shows where that stands and asks for it.
-    private func tapRow() -> NSView {
-        tapLabel.setAccessibilityIdentifier("setting-tap-status")
-        let button = NSButton(title: "Enable…", target: self, action: #selector(enableReliableKeys))
-        button.setAccessibilityIdentifier("setting-tap-enable")
-        return row("Reliable media keys (needs Accessibility)", NSStackView(views: [tapLabel, button]))
-    }
-
-    @objc private func enableReliableKeys() {
-        enableTap()
-        refresh()
+        ])
     }
 
     private func keybindsTab() -> NSView {
         let reset = NSButton(title: "Reset all to defaults", target: self, action: #selector(resetAll))
         reset.setAccessibilityIdentifier("bind-reset-all")
-        let rows = Action.allCases.filter { !Action.global.contains($0) }.map(bindingRow)
-        let list = column(rows)
+        let list = column(Action.allCases.filter { !Action.global.contains($0) }.map(bindingRow))
+        list.translatesAutoresizingMaskIntoConstraints = false
         let scroll = NSScrollView()
-        scroll.documentView = list
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
+        scroll.documentView = list
+        let clip = scroll.contentView
+        NSLayoutConstraint.activate([
+            list.topAnchor.constraint(equalTo: clip.topAnchor),
+            list.leadingAnchor.constraint(equalTo: clip.leadingAnchor),
+            list.widthAnchor.constraint(equalTo: clip.widthAnchor),
+            scroll.widthAnchor.constraint(equalToConstant: Self.size.width - 60),
+            scroll.heightAnchor.constraint(equalToConstant: Self.size.height - 170),
+        ])
         let tab = NSStackView(views: [reset, scroll])
         tab.orientation = .vertical
         tab.alignment = .leading
+        tab.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
         return tab
     }
 
     private func globalTab() -> NSView {
-        let note = NSTextField(wrappingLabelWithString: "This key works while EVP is in the background.")
+        let note = NSTextField(wrappingLabelWithString: "This key works while EVP is in the background. It needs Ctrl, Alt or Cmd.")
         return column([bindingRow(.pauseAll), note])
     }
 
@@ -114,7 +125,7 @@ final class SettingsWindowController: NSWindowController {
 
     private func row(_ title: String, _ control: NSView) -> NSView {
         let label = NSTextField(labelWithString: title)
-        label.widthAnchor.constraint(equalToConstant: 300).isActive = true
+        label.widthAnchor.constraint(equalToConstant: 280).isActive = true
         let stack = NSStackView(views: [label, control])
         stack.spacing = 8
         return stack
@@ -139,10 +150,19 @@ final class SettingsWindowController: NSWindowController {
         return row(title, field)
     }
 
+    /// Reliable media keys need the Accessibility permission; this row shows where that stands and asks for it.
+    private func tapRow() -> NSView {
+        tapLabel.setAccessibilityIdentifier("setting-tap-status")
+        let button = NSButton(title: "Enable…", target: self, action: #selector(enableReliableKeys))
+        button.setAccessibilityIdentifier("setting-tap-enable")
+        return row("Reliable media keys (needs Accessibility)", NSStackView(views: [tapLabel, button]))
+    }
+
     private func bindingRow(_ action: Action) -> NSView {
         let recorder = KeyRecorderField()
         recorder.onChord = { [weak self] chord in self?.changeKeymap { try $0.bind(chord, to: action) } }
         recorder.onClear = { [weak self] in self?.changeKeymap { $0.unbind(action) } }
+        if Action.global.contains(action) { recorder.onRecording = { [weak self] in self?.host?.holdGlobalHotkey($0) } }
         recorder.setAccessibilityIdentifier("bind-\(action.rawValue)")
         recorders[action] = recorder
         let reset = NSButton(title: "Reset", target: self, action: #selector(resetOne(_:)))
@@ -152,6 +172,11 @@ final class SettingsWindowController: NSWindowController {
     }
 
     // MARK: Changes
+
+    @objc private func enableReliableKeys() {
+        host?.enableTap()
+        refresh()
+    }
 
     @objc private func toggled(_ sender: Toggle) {
         let on = sender.state == .on
@@ -187,21 +212,20 @@ final class SettingsWindowController: NSWindowController {
         commit { $0.keymap = keymap }
     }
 
-    /// Applies `change` to a copy of the settings, and stores it when the result is valid.
+    /// Applies `change` to a copy of the settings and stores it when the settings and the host accept it.
     private func commit(_ change: (inout Settings) -> Void) {
         let old = store.state.settings
         var new = old
         change(&new)
+        guard new != old else { return refresh() }
         let problems = new.problems()
-        guard problems.isEmpty else {
-            message.stringValue = problems.joined(separator: " ")
+        if let refusal = problems.isEmpty ? host?.accept(from: old, to: new) : problems.joined(separator: " ") {
+            message.stringValue = refusal
             return refresh()
         }
         message.stringValue = ""
-        if new != old {
-            store.update { $0.settings = new }
-            onChange(old, new)
-        }
+        store.update { $0.settings = new }
+        host?.settingsChanged(from: old, to: new)
         refresh()
     }
 
@@ -211,6 +235,6 @@ final class SettingsWindowController: NSWindowController {
         for field in numbers { field.stringValue = String(format: "%g", settings[keyPath: field.keyPath]) }
         for box in toggles { box.state = settings[keyPath: box.keyPath] ? .on : .off }
         for (action, recorder) in recorders { recorder.chord = settings.keymap.chords[action] }
-        tapLabel.stringValue = tapStatus()
+        tapLabel.stringValue = host?.tapStatus ?? ""
     }
 }

@@ -144,7 +144,7 @@ public final class MpvPlayer {
     /// Creates the render context. Call with the OpenGL context current, before `load`.
     public func attachRenderer() throws {
         precondition(output == .video && renderContext == nil, "attachRenderer is for a video player, once")
-        var api = strdup(MPV_RENDER_API_TYPE_OPENGL)
+        let api = strdup(MPV_RENDER_API_TYPE_OPENGL)
         defer { free(api) }
         var glInit = mpv_opengl_init_params(get_proc_address: Self.glProcAddress, get_proc_address_ctx: nil)
         try withUnsafeMutablePointer(to: &glInit) { glInitPointer in

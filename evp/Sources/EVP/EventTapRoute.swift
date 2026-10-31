@@ -10,9 +10,11 @@ final class EventTapRoute {
         case active = "Active"
         case needsAccessibility = "Needs Accessibility"
         case inactive = "Off"
+        case failed = "Could not start"
     }
 
     private var tap: CFMachPort?
+    private var failedToStart = false
     private var router = MediaKeyRouter()
     private let decoupled: () -> Bool
     private let target: () -> PlayerWindowController?
@@ -23,7 +25,8 @@ final class EventTapRoute {
 
     var status: Status {
         if tap != nil { return .active }
-        return AXIsProcessTrusted() ? .inactive : .needsAccessibility
+        guard AXIsProcessTrusted() else { return .needsAccessibility }
+        return failedToStart ? .failed : .inactive
     }
 
     /// Starts the tap. `prompt` lets the system ask for the permission (once: when already trusted or asked, the system
@@ -31,9 +34,13 @@ final class EventTapRoute {
     func enable(prompt: Bool) {
         guard tap == nil else { return }
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: prompt] as CFDictionary
-        guard AXIsProcessTrustedWithOptions(options),
-              let created = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: 1 << 14,
-                                              callback: eventTapCallback, userInfo: Unmanaged.passUnretained(self).toOpaque()) else { return }
+        guard AXIsProcessTrustedWithOptions(options) else { return }
+        guard let created = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: 1 << 14,
+                                              callback: eventTapCallback, userInfo: Unmanaged.passUnretained(self).toOpaque()) else {
+            failedToStart = true
+            return
+        }
+        failedToStart = false
         CFRunLoopAddSource(CFRunLoopGetMain(), CFMachPortCreateRunLoopSource(nil, created, 0), .commonModes)
         CGEvent.tapEnable(tap: created, enable: true)
         tap = created
