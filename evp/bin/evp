@@ -1,0 +1,36 @@
+#!/bin/bash
+# evp [-g] [--time 4:52] <file>...   open files in Ergonomic Video Player (one window each)
+#   -g, --background   do not bring the app to the front (like `open -g`)
+# EVP_HOME=<dir> starts the app with its state in <dir> (it only takes effect when the app is not running yet).
+set -euo pipefail
+APP="${EVP_APP:-$HOME/Applications/EVP.app}"
+usage() { echo "usage: evp [-g] [--time 4:52] <file>..." >&2; }
+die() { echo "evp: $*" >&2; exit 1; }
+
+time=""
+open_flags=()
+env_flags=()
+[ -z "${EVP_HOME:-}" ] || env_flags=(--env "EVP_HOME=$EVP_HOME")
+files=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --time) [ $# -ge 2 ] || { usage; exit 2; }; time="$2"; shift 2 ;;
+    -g|--background) open_flags=(-g); shift ;;
+    -h|--help) usage; exit 0 ;;
+    -*) echo "evp: unknown option $1" >&2; usage; exit 2 ;;
+    *) files+=("$1"); shift ;;
+  esac
+done
+[ ${#files[@]} -gt 0 ] || { usage; exit 2; }
+[ -z "$time" ] || [ ${#files[@]} -eq 1 ] || die "--time needs exactly one file"
+[ -d "$APP" ] || die "$APP not found (run install.sh, or set EVP_APP)"
+
+for file in "${files[@]}"; do
+  [ -f "$file" ] || die "no such file: $file"
+  absolute="$(cd "$(dirname "$file")" && pwd -P)/$(basename "$file")"
+  url=$(python3 -c 'import sys, urllib.parse as u
+q = {"path": sys.argv[1]}
+if sys.argv[2]: q["time"] = sys.argv[2]
+print("evp://open?" + u.urlencode(q, quote_via=u.quote))' "$absolute" "$time")
+  open ${open_flags[@]+"${open_flags[@]}"} ${env_flags[@]+"${env_flags[@]}"} -a "$APP" "$url"   # macOS bash 3.2 treats an empty array as unset
+done

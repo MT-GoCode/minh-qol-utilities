@@ -1,0 +1,114 @@
+import EVPCore
+import XCTest
+
+final class UnitKeymapTests: XCTestCase {
+    func testDefaultsAreExactlyMinhsKeys() {
+        // From NORTH-STAR.md: space; left/right and J/L; d/s; up/down; 0-9; comma/period; m; f; tab; ctrl+space.
+        let expected: [Action: String] = [
+            .playPause: "space", .seekBackShort: "left", .seekForwardShort: "right", .seekBackLong: "j", .seekForwardLong: "l",
+            .speedUp: "d", .speedDown: "s", .volumeUp: "up", .volumeDown: "down",
+            .jump0: "0", .jump1: "1", .jump2: "2", .jump3: "3", .jump4: "4", .jump5: "5", .jump6: "6", .jump7: "7", .jump8: "8", .jump9: "9",
+            .frameBack: ",", .frameForward: ".", .mute: "m", .fullscreen: "f", .toggleBar: "tab", .pauseAll: "ctrl+space",
+        ]
+        XCTAssertEqual(Keymap.defaults.chords.mapValues(\.description), expected)
+        XCTAssertNil(Keymap.defaults.chords[.screenshot])
+    }
+
+    func testChordParsingAndCanonicalForm() {
+        XCTAssertEqual(KeyChord("shift+ctrl+j")?.description, "ctrl+shift+j")
+        XCTAssertEqual(KeyChord("cmd+alt+shift+ctrl+space")?.description, "ctrl+alt+shift+cmd+space")
+        XCTAssertEqual(KeyChord(",")?.key, ",")
+        for text in ["", "ctrl+", "+", "J", "ctrl+J", "ctrl+ctrl+j", "meta+j", "enter", "jj", "ctrl++", " ", "\t", "\n", "ctrl+ "] {
+            XCTAssertNil(KeyChord(text), text)
+        }
+    }
+
+    func testConflictNamesTheOwnerAndChangesNothing() throws {
+        var keymap = Keymap.defaults
+        let space = try XCTUnwrap(KeyChord("space"))
+        XCTAssertThrowsError(try keymap.bind(space, to: .mute)) { error in
+            let conflict = error as? Keymap.Conflict
+            XCTAssertEqual(conflict?.existing, .playPause)
+            XCTAssertEqual(conflict?.chord, space)
+        }
+        XCTAssertEqual(keymap, Keymap.defaults)
+    }
+
+    func testRebindReplacesAndFreesTheOldChord() throws {
+        var keymap = Keymap.defaults
+        try keymap.bind(try XCTUnwrap(KeyChord("e")), to: .speedUp)
+        XCTAssertEqual(keymap.action(for: try XCTUnwrap(KeyChord("e"))), .speedUp)
+        XCTAssertNil(keymap.action(for: try XCTUnwrap(KeyChord("d"))))
+        try keymap.bind(try XCTUnwrap(KeyChord("e")), to: .speedUp)  // rebinding to its own chord is not a conflict
+    }
+
+    func testResetPutsOneActionBackOnItsDefaultOrReportsAConflict() throws {
+        var keymap = Keymap.defaults
+        try keymap.bind(try XCTUnwrap(KeyChord("e")), to: .speedUp)
+        try keymap.reset(.speedUp)
+        XCTAssertEqual(keymap, Keymap.defaults)
+
+        try keymap.bind(try XCTUnwrap(KeyChord("e")), to: .speedUp)
+        try keymap.bind(try XCTUnwrap(KeyChord("d")), to: .mute)  // mute took speedUp's default chord
+        XCTAssertThrowsError(try keymap.reset(.speedUp)) { XCTAssertEqual(($0 as? Keymap.Conflict)?.existing, .mute) }
+        XCTAssertEqual(keymap.chords[.speedUp]?.description, "e", "a refused reset changes nothing")
+
+        try keymap.bind(try XCTUnwrap(KeyChord("x")), to: .screenshot)
+        try keymap.reset(.screenshot)
+        XCTAssertNil(keymap.chords[.screenshot], "an action with no default goes back to no key")
+    }
+
+    func testResetAllRestoresEveryDefault() throws {
+        var keymap = Keymap.defaults
+        keymap.unbind(.mute)
+        try keymap.bind(try XCTUnwrap(KeyChord("x")), to: .speedUp)
+        keymap.resetAll()
+        XCTAssertEqual(keymap, Keymap.defaults)
+    }
+
+    func testJsonRoundTrip() throws {
+        var keymap = Keymap.defaults
+        keymap.unbind(.mute)
+        try keymap.bind(try XCTUnwrap(KeyChord("shift+right")), to: .seekForwardLong)
+        let decoded = try JSONDecoder().decode(Keymap.self, from: JSONEncoder().encode(keymap))
+        XCTAssertEqual(decoded, keymap)
+    }
+
+    func testCorruptKeymapJsonIsRejected() {
+        let twoActionsOneChord = Data(#"{"mute":"m","fullscreen":"m"}"#.utf8)
+        let badChord = Data(#"{"mute":"M"}"#.utf8)
+        for data in [twoActionsOneChord, badChord] {
+            XCTAssertThrowsError(try JSONDecoder().decode(Keymap.self, from: data), String(decoding: data, as: UTF8.self))
+        }
+    }
+
+    func testOlderOrNewerKeymapFilesStayReadable() throws {
+        // Only `mute` is stored, rebound to "x"; "fly" is an action this build does not know.
+        let stored = Data(#"{"mute":"x","fly":"f","speedUp":null,"fullscreen":null}"#.utf8)
+        let keymap = try JSONDecoder().decode(Keymap.self, from: stored)
+        XCTAssertEqual(keymap.chords[.mute]?.description, "x")
+        XCTAssertNil(keymap.chords[.speedUp], "null means the user unbound it")
+        XCTAssertNil(keymap.chords[.fullscreen])
+        XCTAssertEqual(keymap.chords[.playPause]?.description, "space", "an action missing from the file takes its default")
+    }
+
+    func testMissingActionKeepsItsDefaultOnlyWhenTheChordIsFree() throws {
+        // The user gave "space" to mute; playPause is missing from the file and must not steal it back.
+        let keymap = try JSONDecoder().decode(Keymap.self, from: Data(#"{"mute":"space"}"#.utf8))
+        XCTAssertEqual(keymap.chords[.mute]?.description, "space")
+        XCTAssertNil(keymap.chords[.playPause])
+    }
+
+    func testJumpFractionsAndGlobalActions() {
+        XCTAssertEqual(Action.allCases.compactMap(\.jumpFraction), [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
+        XCTAssertEqual(Action.global, [.pauseAll])
+    }
+
+    func testSettingsNamesReadAsPlainWordsAndAreAllDifferent() {
+        XCTAssertEqual(Action.seekBackShort.title, "Seek back short")
+        XCTAssertEqual(Action.toggleBar.title, "Toggle bar")
+        XCTAssertEqual(Action.jump3.title, "Jump to 30%")
+        XCTAssertEqual(Action.pauseAll.title, "Pause all")
+        XCTAssertEqual(Set(Action.allCases.map(\.title)).count, Action.allCases.count)
+    }
+}
