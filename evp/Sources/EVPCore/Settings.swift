@@ -36,3 +36,19 @@ public struct Settings: Codable, Equatable {
         keymap = try c.value(.keymap, default: keymap)
     }
 }
+
+extension Settings {
+    /// What is wrong with these values, one sentence each; empty means they can be used. Checked where values come in
+    /// (the Settings window and a hand-edited file), not on every use.
+    public func problems() -> [String] {
+        var found: [String] = []
+        func require(_ ok: Bool, _ message: String) { if !ok { found.append(message) } }
+        require(seekShortSeconds > 0 && seekShortSeconds.isFinite, "The short seek step must be more than 0 seconds.")
+        require(seekLongSeconds > 0 && seekLongSeconds.isFinite, "The long seek step must be more than 0 seconds.")
+        require(speedStep > 0 && speedStep < MpvPlayer.speedRange.upperBound, "The speed step must be more than 0 and less than \(MpvPlayer.speedRange.upperBound).")
+        require(volumeStep > 0 && volumeStep <= MpvPlayer.volumeRange.upperBound, "The volume step must be more than 0 and at most \(Int(MpvPlayer.volumeRange.upperBound)).")
+        require(MpvPlayer.speedRange.contains(defaultSpeed), "The default speed must be between \(MpvPlayer.speedRange.lowerBound) and \(Int(MpvPlayer.speedRange.upperBound)).")
+        require(MpvPlayer.volumeRange.contains(defaultVolume), "The default volume must be between 0 and \(Int(MpvPlayer.volumeRange.upperBound)).")
+        return found
+    }
+}

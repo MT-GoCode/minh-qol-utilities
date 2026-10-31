@@ -62,8 +62,8 @@ public final class MpvPlayer {
     }
 
     /// mpv's documented limits for `speed`; the volume range is this app's decision (no boost above 100).
-    private static let speedRange = 0.01...100.0
-    private static let volumeRange = 0.0...100.0
+    public static let speedRange = 0.01...100.0
+    public static let volumeRange = 0.0...100.0
 
     /// Where the player sends picture and sound. `video` draws through a render context (`attachRenderer`) and
     /// plays audio; `headless` has neither, for tests.
