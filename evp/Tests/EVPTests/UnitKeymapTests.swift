@@ -42,6 +42,30 @@ final class UnitKeymapTests: XCTestCase {
         try keymap.bind(try XCTUnwrap(KeyChord("e")), to: .speedUp)  // rebinding to its own chord is not a conflict
     }
 
+    func testResetPutsOneActionBackOnItsDefaultOrReportsAConflict() throws {
+        var keymap = Keymap.defaults
+        try keymap.bind(try XCTUnwrap(KeyChord("e")), to: .speedUp)
+        try keymap.reset(.speedUp)
+        XCTAssertEqual(keymap, Keymap.defaults)
+
+        try keymap.bind(try XCTUnwrap(KeyChord("e")), to: .speedUp)
+        try keymap.bind(try XCTUnwrap(KeyChord("d")), to: .mute)  // mute took speedUp's default chord
+        XCTAssertThrowsError(try keymap.reset(.speedUp)) { XCTAssertEqual(($0 as? Keymap.Conflict)?.existing, .mute) }
+        XCTAssertEqual(keymap.chords[.speedUp]?.description, "e", "a refused reset changes nothing")
+
+        try keymap.bind(try XCTUnwrap(KeyChord("x")), to: .screenshot)
+        try keymap.reset(.screenshot)
+        XCTAssertNil(keymap.chords[.screenshot], "an action with no default goes back to no key")
+    }
+
+    func testResetAllRestoresEveryDefault() throws {
+        var keymap = Keymap.defaults
+        keymap.unbind(.mute)
+        try keymap.bind(try XCTUnwrap(KeyChord("x")), to: .speedUp)
+        keymap.resetAll()
+        XCTAssertEqual(keymap, Keymap.defaults)
+    }
+
     func testJsonRoundTrip() throws {
         var keymap = Keymap.defaults
         keymap.unbind(.mute)

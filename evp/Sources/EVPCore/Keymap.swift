@@ -35,6 +35,16 @@ public struct Keymap: Equatable {
     }
 
     public mutating func unbind(_ action: Action) { chords[action] = nil }
+
+    /// Puts `action` back on its default chord (or off, if it has none). Throws, and changes nothing, when another
+    /// action has taken that chord since.
+    public mutating func reset(_ action: Action) throws {
+        guard let chord = Keymap.defaults.chords[action] else { return unbind(action) }
+        try bind(chord, to: action)
+    }
+
+    /// Every action back on its default chord.
+    public mutating func resetAll() { self = Keymap.defaults }
 }
 
 /// Stored as one entry per action, `null` meaning the user unbound it. An action missing from the file (added by a
