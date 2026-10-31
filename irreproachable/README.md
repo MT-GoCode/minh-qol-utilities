@@ -26,8 +26,8 @@ has at most one goal, so editing a goal is running `new` again: it replaces the 
 
 - **Goal prompt**: the goal again, once the agent has sat idle `--idle-after` (default 1m). While one of the
   agent's pacemaker runs is watched, the wait is 21m instead (pacemaker pings at least every 1200s).
-- **Steer**: every `--steer-every` (default 30m), a progress-and-discipline check with the goal. If the agent is
-  busy it is delivered into its current turn (`paseo send --behavior steer`); it does not interrupt.
+- **Steer**: every `--steer-every` (default 30m), a progress-and-discipline check with the goal, sent once the
+  agent is idle. A busy agent is never messaged: a message queued into a running Claude turn can wedge that turn.
 
 Nothing is sent while the agent has a pending permission request. `mute [DURATION]` holds goal prompts (not
 steers) for up to 1h; `unmute` ends it at once.
@@ -41,8 +41,8 @@ runs it first. When the next message is due and the last one is still unacknowle
 - if it is not busy, it had its turn and could not act: the goal goes **dormant**. Nothing is sent, goal prompts or
   steers, and the goal stays registered.
 
-Only a message that started a turn of its own counts. A steer delivered into a busy turn arrives inside tool
-output, where an agent may rightly refuse it as injection; leaving it unacknowledged never makes a goal dormant.
+Every message goes to an idle agent and starts a turn of its own, so an unacknowledged one means the agent could
+not act.
 
 A dormant goal comes back when the agent acks late, when `revive` runs, or by **auto-revive**: every `--steer-every`
 (sooner if the report gives a reset time) the service reads `paseo usage --agent <id> --refresh` and revives the

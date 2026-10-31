@@ -40,7 +40,7 @@ import sys
 p = sys.argv[1]; s = open(p).read(); n = 0
 for a, b in (("# A goal's watcher sends the agent two kinds of message:", "# irreproachable sends the agent two kinds of message:"),
              ("every steer_every, interrupting the agent if it is busy: the header",
-              "every steer_every, delivered into its current turn if it is busy (it does not interrupt): the header"),
+              "every steer_every, once the agent is idle (never into a busy turn): the header"),
              ("\n\n    If this message cut off a tool call, that was deliberate and is not a rejection or an error. Report, then immediately redo the interrupted step and carry on in this same turn. Do not stop to ask.", "")):
     if a in s:
         s = s.replace(a, b); n += 1

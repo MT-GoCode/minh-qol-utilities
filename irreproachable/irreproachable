@@ -13,8 +13,8 @@
     irreproachable --selftest [SECTION ...]
 
 One supervised service (`serve`, run by launchd or a systemd user unit) watches every goal on the machine. It
-re-sends the goal when the agent has sat idle, and steers it on a fixed cadence, delivered into the current turn
-if the agent is busy. Every message asks the agent to run `irreproachable ack <nonce>`; a message left
+re-sends the goal when the agent has sat idle, and steers it on a fixed cadence, once the agent is idle (a
+busy turn is never messaged). Every message asks the agent to run `irreproachable ack <nonce>`; a message left
 unacknowledged means the agent cannot act, so the goal goes quiet (dormant) but stays registered until the agent
 acks, `paseo usage` shows capacity again, or `irreproachable revive` runs. A goal ends only when it is cleared,
 replaced, or its agent is gone. All state is files under ~/.irreproachable/<agent-id>/, so restarts lose nothing.
@@ -57,7 +57,7 @@ DEFAULT_CONF = """# irreproachable defaults -- used by `irreproachable new` for 
 #   goal prompt  re-sends the goal once the agent has sat idle for idle_after. 1m gives you time to
 #                interrupt it, type and rethink without it being prompted every time it stops. While
 #                one of the agent's pacemaker runs is live, the wait is 21m instead.
-#   steer        every steer_every, delivered into its current turn if it is busy (it does not interrupt): the header
+#   steer        every steer_every, once the agent is idle (never into a busy turn): the header
 #                "[Discuss the below ...]" followed by steer_text, with {goal} replaced by the goal.
 #
 # Durations are a number and s, m or h: 30s, 1m, 2h. steer_text continues on lines indented by four
@@ -394,7 +394,7 @@ def resolve_goal(arg):
 def fresh_state(g):
     now = time.time()
     return {"token": g["token"], "last_sent": 0.0, "next_steer": now + g["steer_every"], "next_check": now,
-            "awaiting": None, "awaiting_busy": False, "dormant": None, "gone_seen": None, "ended": None}
+            "awaiting": None, "dormant": None, "gone_seen": None, "ended": None}
 
 
 def due_at(s):
@@ -483,26 +483,22 @@ class Service:
         due = (now - quiet + idle_after) if idle else (now + idle_after)
         due = max(due, muted_until(aid, g["token"]))
         goal_due = idle and now >= due
-        steer_due = now >= s["next_steer"] or (goal_due and s["next_steer"] - now < idle_after)   # pending ⇒ both false
+        # Never message a busy agent: a steer queued into a running Claude turn can wedge that turn for good
+        # (observed: the turn never completes). A due steer waits until the agent is idle.
+        steer_due = idle and (now >= s["next_steer"] or (goal_due and s["next_steer"] - now < idle_after))
         if not (goal_due or steer_due):
-            s["next_check"] = min(due, s["next_steer"], now + g["idle_after"]) if waiting else min(due, s["next_steer"])
+            if not idle:
+                s["next_check"] = now + g["idle_after"]          # busy or pending: look again after idle_after (v1)
+            else:
+                s["next_check"] = min(due, s["next_steer"], now + g["idle_after"]) if waiting else min(due, s["next_steer"])
             return
         if s["awaiting"] and (read_text(gpath(aid, "ack")) or "").strip() == s["awaiting"]:
             log(aid, f"ACKED {s['awaiting']}")       # acked while this tick was in flight
             s["awaiting"] = None
-        if s["awaiting"]:
-            if busy:
-                s["next_check"] = now + g["idle_after"]
-                return
-            if s.get("awaiting_busy"):
-                # it reached a running turn inside tool output, where agents may rightly refuse it as injection:
-                # only a message that started a turn of its own proves the agent could not act
-                log(aid, f"UNACKED {s['awaiting']} sent while busy")
-                s["awaiting"] = None
-            else:
-                s["dormant"] = {"since": now, "next_usage_check": now + g["steer_every"]}
-                log(aid, f"DORMANT {g['token']} unacked={s['awaiting']}")
-                return
+        if s["awaiting"]:                                     # the agent is idle here: it had its turn and did not ack
+            s["dormant"] = {"since": now, "next_usage_check": now + g["steer_every"]}
+            log(aid, f"DORMANT {g['token']} unacked={s['awaiting']}")
+            return
         g2, _ = read_goal(aid)
         if g2 is None or g2["token"] != g["token"]:
             s["next_check"] = now                     # cleared or replaced during this tick: send nothing
@@ -510,8 +506,8 @@ class Service:
         kind = "steer" if steer_due else "goal"
         nonce = uuid.uuid4().hex[:12]
         body = steer_text(g) if kind == "steer" else goal_prompt(g, waiting, quiet)
-        prev = (s["awaiting"], s.get("awaiting_busy", False), s["last_sent"], s["next_steer"])
-        s["awaiting"], s["awaiting_busy"], s["last_sent"] = nonce, busy, now
+        prev = (s["awaiting"], s["last_sent"], s["next_steer"])
+        s["awaiting"], s["last_sent"] = nonce, now
         if kind == "steer":
             s["next_steer"] = now + g["steer_every"]
         atomic_write(gpath(aid, "state.json"), json.dumps(s))     # before the send: an early ack is accepted,
@@ -520,7 +516,7 @@ class Service:
         now = time.time()
         if isinstance(r, PaseoError):
             if r.code in NOT_DELIVERED:
-                s["awaiting"], s["awaiting_busy"], s["last_sent"], s["next_steer"] = prev
+                s["awaiting"], s["last_sent"], s["next_steer"] = prev
             s["next_check"] = now + g["idle_after"]
             return
         log(aid, f"SENT {g['token']} {kind} nonce={nonce} quiet={int(quiet)}")
@@ -885,7 +881,7 @@ def cmd_help(_):
 
 The irreproachable service sends the agent two kinds of message:
   goal prompt  the goal again, once the agent has sat idle {short(d["idle_after"])} ({short(WAITING_IDLE)} while one of its pacemaker runs is live)
-  steer        every {short(d["steer_every"])}, delivered into the current turn if busy: a progress report and discipline check, with the goal
+  steer        every {short(d["steer_every"])}, once the agent is idle (never into a busy turn): a progress report and discipline check, with the goal
 The agent runs `irreproachable clear` when the goal is met.
 
 Usage
@@ -1161,7 +1157,7 @@ exec "{REAL_PASEO}" "$@"
             finish(aid)
 
         if want("steer"):
-            print("### a steer is delivered into a busy turn without interrupting it", flush=True)
+            print("### a busy agent is never messaged; a due steer waits until it is idle", flush=True)
             aid = agent("steer", SLEEPER)
             wait_idle(aid)
             subprocess.run(["paseo", "send", "--no-wait", aid, "--prompt", "SLEEP"], capture_output=True)
@@ -1170,31 +1166,21 @@ exec "{REAL_PASEO}" "$@"
                                                                  text=True).stdout) >= 1, 60, 1)
             check("the agent started its 55 s foreground call", started)
             t_start = time.time()
-            new(aid, "--idle-after", "20s", "--steer-every", "30s")
-            busy_at_steer = {}
-
-            def steer_seen():
-                if sent(aid, "steer"):
-                    busy_at_steer.setdefault("s", status(aid).get("Status"))
-                    return True
-                return False
-            wait_for(steer_seen, 30 + SLACK + 10, 1)
-            check("a steer went out while the agent was running", busy_at_steer.get("s") in BUSY, busy_at_steer)
-            # A steer waits for the running call; an interrupt frees the turn at once (Claude Code backgrounds the
-            # call, probed). So the agent must stay busy until the 55 s call would have ended.
-            seen = []
+            new(aid, "--idle-after", "20s", "--steer-every", "30s")   # the steer falls due at +30 s, mid-call
+            busy_sends = []
             while time.time() < t_start + 55 - 5:
-                seen.append(status(aid).get("Status"))
+                if status(aid).get("Status") in BUSY:
+                    busy_sends.extend(x for x in sent(aid) if x not in busy_sends)
                 time.sleep(1)
-            check("the agent stayed busy until its call finished: the steer did not interrupt it",
-                  seen and all(x in BUSY for x in seen), seen)
+            check("nothing was sent while the agent was busy", not busy_sends, log_lines(aid)[-4:])
             wait_idle(aid, 120)
+            t_idle = time.time()
+            check("the due steer goes out once the agent is idle",
+                  wait_for(lambda: [x for x in sent(aid, "steer") if x >= t_start + 55 - 5], 20 + SLACK, 1),
+                  log_lines(aid)[-4:])
             tl = subprocess.run(["paseo", "logs", aid], capture_output=True, text=True).stdout
-            check("the call ran once and printed SLEPT", "SLEPT" in tl and shell_runs(tl) == 1, tl[-1500:])
-            n = len(sent(aid))
-            ok = wait_for(lambda: len(sent(aid)) > n, 20 + 2 * SLACK, 1)
-            check("a steer it never acked (it reached a busy turn) does not make the goal dormant",
-                  ok and not events(aid, "DORMANT") and events(aid, "UNACKED"), log_lines(aid)[-5:])
+            check("the call ran once and printed SLEPT: nothing interrupted it",
+                  "SLEPT" in tl and shell_runs(tl) == 1, tl[-1500:])
             finish(aid)
 
         if want("pending"):
@@ -1573,7 +1559,7 @@ def main():
     p = sub.add_parser("new", help="give an agent a goal")
     p.add_argument("goal")
     p.add_argument("--idle-after", type=dur, help="idle time before the goal prompt (default: the defaults file)")
-    p.add_argument("--steer-every", type=dur, help="steer cadence; delivered into the current turn if busy")
+    p.add_argument("--steer-every", type=dur, help="steer cadence; sent once the agent is idle")
     p.add_argument("--steer-prompt", help="steer text for this goal; {goal} is replaced by the goal")
     p.add_argument("--agent", help="agent id (default: $PASEO_AGENT_ID)")
     p = sub.add_parser("ack", help="acknowledge the message awaiting acknowledgement")
