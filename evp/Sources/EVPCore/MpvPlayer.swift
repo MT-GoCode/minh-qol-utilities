@@ -1,9 +1,11 @@
 import CMpv
 import Foundation
 
-public struct MpvError: Error, Equatable, CustomStringConvertible {
+public struct MpvError: Error, Equatable, CustomStringConvertible, LocalizedError {
     public let code: Int32
     public var description: String { String(cString: mpv_error_string(code)) }
+    /// What an alert shows: mpv's own words, not the bridged "error 1".
+    public var errorDescription: String? { "mpv: \(description) (\(code))" }
 
     public static let unknownFormat = MpvError(code: MPV_ERROR_UNKNOWN_FORMAT.rawValue)
 }

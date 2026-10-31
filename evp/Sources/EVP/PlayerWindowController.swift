@@ -89,6 +89,8 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         // `onClose` drops the app's reference to this controller; it must live to the end of this call.
         withExtendedLifetime(self) {
+            // Detaching the video output makes mpv end the file with an error; a closing window must not report it.
+            player.onEvent = nil
             video.shutdown()
             session.closed(id)
             isPlaying = false
@@ -183,6 +185,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func fail(_ error: Error) {
+        NSLog("EVP: %@ could not play: %@", path, error.localizedDescription)
         NSAlert(error: error).runModal()
         close()
     }
