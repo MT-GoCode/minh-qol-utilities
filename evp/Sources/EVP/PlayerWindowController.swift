@@ -122,7 +122,22 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         case .toggleBar:
             content.barHidden.toggle()
             session.barToggled(id, hidden: content.barHidden)
-        case .screenshot, .pauseAll: bar.showFeedback("\(action) is not available yet")
+        case .screenshot: copyScreenshot()
+        case .pauseAll: bar.showFeedback("\(action) is not available yet")
+        }
+    }
+
+    /// The frame being shown, as a PNG on the clipboard and nowhere else.
+    private func copyScreenshot() {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("evp-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: file) }
+        do {
+            try player.screenshot(to: file)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setData(try Data(contentsOf: file), forType: .png)
+            bar.showFeedback("Screenshot copied")
+        } catch {
+            bar.showFeedback("Error: \(error)")
         }
     }
 
