@@ -25,6 +25,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         window.contentView = content
         window.contentMinSize = NSSize(width: bar.minimumWidth, height: PlayerLayout.barHeight + 1)
         window.collectionBehavior = .fullScreenPrimary
+        window.acceptsMouseMovedEvents = true
         window.appearance = NSAppearance(named: .darkAqua)
         window.title = request.file.lastPathComponent
         window.representedURL = request.file
@@ -81,7 +82,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         switch command {
         case .action(.fullscreen): window?.toggleFullScreen(nil)
         case .action(.toggleBar): content.barHidden.toggle()
-        case .action, .seekFraction, .setVolume: preconditionFailure("\(command) is not handled by the window")
+        case .action, .seek, .seekFraction, .setVolume: preconditionFailure("\(command) is not handled by the window")
         }
     }
 

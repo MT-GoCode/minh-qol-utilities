@@ -204,18 +204,28 @@ final class RunningApp {
         }
     }
 
+    /// Runs the accessibility action of `id` whose name contains `action`.
+    func perform(_ id: String, action: String) throws { _ = try driver(["perform", String(application.processIdentifier), id, action], asApp: true) }
+
+    func setValue(_ id: String, to value: Double) throws {
+        _ = try driver(["setvalue", String(application.processIdentifier), id, String(value)], asApp: true)
+    }
+
+    func type(_ text: String) throws { _ = try driver(["type", String(application.processIdentifier), text], asApp: true) }
+
     func focus(_ id: String) throws { _ = try driver(["focus", String(application.processIdentifier), id], asApp: true) }
 
-    func read(_ id: String) throws -> String {
-        try driver(["read", String(application.processIdentifier), id], asApp: true).trimmingCharacters(in: .whitespacesAndNewlines)
+    func read(_ id: String, attribute: String? = nil) throws -> String {
+        try driver(["read", String(application.processIdentifier), id] + (attribute.map { [$0] } ?? []), asApp: true)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Reads `id` until `done` accepts its text.
-    func wait(for id: String, timeout: TimeInterval = 10, until done: (String) -> Bool) throws -> String {
+    func wait(for id: String, attribute: String? = nil, timeout: TimeInterval = 10, until done: (String) -> Bool) throws -> String {
         let deadline = Date().addingTimeInterval(timeout)
         var last = "nothing read"
         while Date() < deadline {
-            if let text = try? read(id) {
+            if let text = try? read(id, attribute: attribute) {
                 if done(text) { return text }
                 last = text
             }

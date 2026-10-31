@@ -10,6 +10,9 @@ final class ControlBar: NSView {
     private static let rowY: CGFloat = 8
     private static let rowHeight: CGFloat = 28
     private static let overflowWidth: CGFloat = 28
+    private static let timeFieldWidth: CGFloat = 54
+    private static let durationWidth: CGFloat = 72
+    private static let scrubHeight: CGFloat = 26
 
     /// One foldable control, its width and the equivalent `…` menu entry.
     private final class Item {
@@ -26,14 +29,14 @@ final class ControlBar: NSView {
     var onCommand: ((Command) -> Void)?
 
     private let scrub = ScrubBar()
-    private let timeLabel = ControlBar.label("0:00 / 0:00", id: "time", width: 124, font: .monospacedDigitSystemFont(ofSize: 12, weight: .regular))
+    private let timeField = TimeField()
+    private let durationLabel = ControlBar.label(" / 0:00", id: "duration", width: ControlBar.durationWidth, font: .monospacedDigitSystemFont(ofSize: 12, weight: .regular))
     private let feedbackLabel = ControlBar.label("", id: "feedback", width: 0, font: .systemFont(ofSize: 12))
     private let playPause = CommandButton(title: "▶", command: .action(.playPause), id: "play-pause")
     private let overflowButton = NSButton(title: "…", target: nil, action: nil)
     private let overflowMenu = NSMenu()
     private let volumeSlider = NSSlider(value: 100, minValue: 0, maxValue: 100, target: nil, action: nil)
     private let speedButton = CommandButton(title: "1.0x", command: .action(.speedReset), id: "speed")
-    private var duration = 0.0
 
     // The foldable items by where they sit (left to right in each group) and in the order they are kept.
     private var beforePlay: [Item] = []
@@ -56,7 +59,9 @@ final class ControlBar: NSView {
         volumeSlider.setAccessibilityIdentifier("volume")
         volumeSlider.target = self
         volumeSlider.action = #selector(volumeChanged)
-        [scrub, timeLabel, feedbackLabel, playPause, overflowButton].forEach(addSubview)
+        scrub.onSeek = { [weak self] in self?.onCommand?(.seekFraction($0)) }
+        timeField.onSubmit = { [weak self] in self?.onCommand?(.seek($0)) }
+        [scrub, timeField, durationLabel, feedbackLabel, playPause, overflowButton].forEach(addSubview)
 
         func seek(_ sign: String, _ seconds: Double, _ action: Action, _ id: String) -> Item {
             let title = "\(sign)\(String(format: "%g", seconds))"
@@ -83,11 +88,14 @@ final class ControlBar: NSView {
     // MARK: Shown from the player
 
     func setTime(_ seconds: Double) {
-        timeLabel.stringValue = "\(TimeFormat.format(seconds)) / \(TimeFormat.format(duration))"
-        scrub.fraction = duration > 0 ? seconds / duration : 0
+        timeField.show(seconds: seconds)
+        scrub.fraction = scrub.duration > 0 ? seconds / scrub.duration : 0
     }
 
-    func setDuration(_ seconds: Double) { duration = seconds }
+    func setDuration(_ seconds: Double) {
+        scrub.duration = seconds
+        durationLabel.stringValue = " / \(TimeFormat.format(seconds))"
+    }
     func setPaused(_ paused: Bool) { playPause.title = paused ? "▶" : "⏸" }
     func setSpeed(_ speed: Double) { speedButton.title = String(format: "%.1fx", speed) }
     func setVolume(_ volume: Double) { volumeSlider.doubleValue = volume }
@@ -96,13 +104,13 @@ final class ControlBar: NSView {
     /// Narrowest bar that still shows the time, play/pause and the `…` menu.
     var minimumWidth: CGFloat { Self.margin * 2 + essentialWidth - Self.margin + Self.gap + Self.overflowWidth }
 
-    private var essentialWidth: CGFloat { Self.margin + timeLabel.frame.width + Self.gap + playPause.frame.width }
+    private var essentialWidth: CGFloat { Self.margin + Self.timeFieldWidth + Self.durationWidth + Self.gap + playPause.frame.width }
 
     // MARK: Layout
 
     override func layout() {
         super.layout()
-        scrub.frame = NSRect(x: Self.margin, y: Self.rowY + Self.rowHeight + 6, width: max(bounds.width - 2 * Self.margin, 0), height: 16)
+        scrub.frame = NSRect(x: Self.margin, y: Self.rowY + Self.rowHeight + 6, width: max(bounds.width - 2 * Self.margin, 0), height: Self.scrubHeight)
         let kept = BarLayout.visibleCount(available: bounds.width - Self.margin, essentialWidth: essentialWidth,
                                           foldableWidths: keepFirst.map(\.width), gap: Self.gap, overflowWidth: Self.overflowWidth)
         for (index, item) in keepFirst.enumerated() {
@@ -117,7 +125,9 @@ final class ControlBar: NSView {
             view.frame = NSRect(x: x, y: Self.rowY, width: width, height: Self.rowHeight)
             x += width + Self.gap
         }
-        place(timeLabel, width: timeLabel.frame.width)
+        timeField.frame = NSRect(x: x, y: Self.rowY + 4, width: Self.timeFieldWidth, height: 20)
+        durationLabel.frame = NSRect(x: x + Self.timeFieldWidth, y: Self.rowY + 4, width: Self.durationWidth, height: 20)
+        x += Self.timeFieldWidth + Self.durationWidth + Self.gap
         for item in beforePlay where item.visible { place(item.view, width: item.width) }
         place(playPause, width: playPause.frame.width)
         for item in afterPlay where item.visible { place(item.view, width: item.width) }

@@ -128,6 +128,10 @@ final class IntegrationPlayerTests: XCTestCase {
         try s.waitForPosition(near: 0, within: 0.2)
         XCTAssertEqual(try player.perform(.action(.jump5), settings: settings), .done(feedback: "50%"))
         try s.waitForPosition(near: 10, within: 0.2)
+        XCTAssertEqual(try player.perform(.seek(.absolute(12)), settings: settings), .done(feedback: "Go to 0:12"))
+        try s.waitForPosition(near: 12, within: 0.2)
+        XCTAssertEqual(try player.perform(.seek(.relative(-4)), settings: settings), .done(feedback: "-4s"))
+        try s.waitForPosition(near: 8, within: 0.2)
         XCTAssertEqual(try player.perform(.seekFraction(0.25), settings: settings), .done(feedback: nil))
         try s.waitForPosition(near: 5, within: 0.2)
         for _ in 0..<2 { _ = try player.perform(.action(.speedUp), settings: settings) }

@@ -11,6 +11,11 @@ extension MpvPlayer {
     /// Runs the playback commands. Step sizes come from `settings`.
     public func perform(_ command: Command, settings: Settings) throws -> Outcome {
         switch command {
+        case .seek(.absolute(let seconds)):
+            try seek(to: seconds)
+            return .done(feedback: "Go to \(TimeFormat.format(seconds))")
+        case .seek(.relative(let seconds)):
+            return try seekFeedback(seconds)
         case .seekFraction(let fraction):
             try seek(toFraction: fraction)
             return .done(feedback: nil)

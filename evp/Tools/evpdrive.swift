@@ -3,6 +3,9 @@
 //   evpdrive windows <pid>               one JSON object per window: {"id":N,"x":..,"y":..,"w":..,"h":..}
 //   evpdrive resize <pid> <width> <height>  move the first window to the top-left, then set its frame size (needs Accessibility)
 //   evpdrive press <pid> <id>            press the button with that accessibility identifier (needs Accessibility)
+//   evpdrive perform <pid> <id> <action>   run the element's accessibility action whose name contains `action`
+//   evpdrive setvalue <pid> <id> <number>  set the element's accessibility value (a slider's position, 0 to 1)
+//   evpdrive type <pid> <text>             type the text (as characters, not key codes)
 //   evpdrive focus <pid> <id>            give that element keyboard focus (needs Accessibility)
 //   evpdrive read <pid> <id> [attribute] print the value, title or description of that element, or the named attribute
 //   evpdrive tree <pid>                  print the accessibility tree (role and identifier), for debugging
@@ -120,6 +123,48 @@ func press(pid: pid_t, id: String) {
     guard AXUIElementPerformAction(element(pid: pid, id: id), kAXPressAction as CFString) == .success else { fail("could not press \(id)") }
 }
 
+func frame(pid: pid_t, id: String) -> CGRect {
+    let target = element(pid: pid, id: id)
+    var position: CFTypeRef?
+    var size: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(target, kAXPositionAttribute as CFString, &position) == .success,
+          AXUIElementCopyAttributeValue(target, kAXSizeAttribute as CFString, &size) == .success,
+          let position, let size else { fail("\(id) has no frame") }
+    var origin = CGPoint.zero
+    var extent = CGSize.zero
+    AXValueGetValue(position as! AXValue, .cgPoint, &origin)
+    AXValueGetValue(size as! AXValue, .cgSize, &extent)
+    return CGRect(origin: origin, size: extent)
+}
+
+func perform(pid: pid_t, id: String, action: String) {
+    var names: CFArray?
+    let target = element(pid: pid, id: id)
+    guard AXUIElementCopyActionNames(target, &names) == .success,
+          let match = (names as? [String])?.first(where: { $0.contains(action) }) else {
+        fail("\(id) has no action matching \(action); it has \((names as? [String]) ?? [])")
+    }
+    guard AXUIElementPerformAction(target, match as CFString) == .success else { fail("could not perform \(match) on \(id)") }
+}
+
+func setValue(pid: pid_t, id: String, value: Double) {
+    guard AXUIElementSetAttributeValue(element(pid: pid, id: id), kAXValueAttribute as CFString, NSNumber(value: value)) == .success else {
+        fail("could not set the value of \(id)")
+    }
+}
+
+func typeText(pid: pid_t, text: String) {
+    for character in text {
+        let characters = Array(String(character).utf16)
+        for down in [true, false] {
+            let event = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down)!
+            event.keyboardSetUnicodeString(stringLength: characters.count, unicodeString: characters)
+            event.postToPid(pid)
+        }
+        usleep(30_000)
+    }
+}
+
 func focus(pid: pid_t, id: String) {
     guard AXUIElementSetAttributeValue(element(pid: pid, id: id), kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success else { fail("could not focus \(id)") }
 }
@@ -148,10 +193,13 @@ case "windows" where args.count == 2: listWindows(pid: pid_t(int(args[1])))
 case "resize" where args.count == 4: resize(pid: pid_t(int(args[1])), width: Double(int(args[2])), height: Double(int(args[3])))
 case "tree" where args.count == 2: tree(pid: pid_t(int(args[1])))
 case "press" where args.count == 3: press(pid: pid_t(int(args[1])), id: args[2])
+case "perform" where args.count == 4: perform(pid: pid_t(int(args[1])), id: args[2], action: args[3])
+case "setvalue" where args.count == 4: setValue(pid: pid_t(int(args[1])), id: args[2], value: Double(args[3]) ?? 0)
+case "type" where args.count == 3: typeText(pid: pid_t(int(args[1])), text: args[2])
 case "focus" where args.count == 3: focus(pid: pid_t(int(args[1])), id: args[2])
 case "read" where args.count == 3 || args.count == 4: read(pid: pid_t(int(args[1])), id: args[2], attribute: args.count == 4 ? args[3] : nil)
 case "snapshot" where args.count == 3: snapshot(window: int(args[1]), to: args[2])
 case "key" where args.count >= 3: postKey(target: parseTarget(args[1]), chord: args[2], count: args.count > 3 ? int(args[3]) : 1)
 case "media" where args.count >= 2: args.dropFirst().forEach { postMedia(int($0)) }
-default: fail("usage: evpdrive windows <pid> | resize <pid> <w> <h> | press <pid> <id> | focus <pid> <id> | read <pid> <id> [attribute] | snapshot <window id> <png> | key <pid|hid> <chord> [n] | media <code>...")
+default: fail("usage: evpdrive windows <pid> | resize <pid> <w> <h> | press <pid> <id> | perform <pid> <id> <action> | setvalue <pid> <id> <number> | type <pid> <text> | focus <pid> <id> | read <pid> <id> [attribute] | snapshot <window id> <png> | key <pid|hid> <chord> [n] | media <code>...")
 }

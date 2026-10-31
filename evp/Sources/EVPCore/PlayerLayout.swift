@@ -2,8 +2,9 @@ import CoreGraphics
 
 /// Where the video and the control bar go in a window: the bar is a fixed strip below the video, never over it.
 public enum PlayerLayout {
-    /// The scrub row (16) and the controls row (28) with 8 below and 6 above and between: 16 + 28 + 8 + 6 + 6.
-    public static let barHeight: CGFloat = 64
+    /// The controls row (28) with 8 below, 6 between the rows, the progress strip (26: a 16 pt track area with 10 pt
+    /// above it for the hover time) and 4 above: 8 + 28 + 6 + 26 + 4.
+    public static let barHeight: CGFloat = 72
 
     /// Frames in AppKit coordinates (origin at the bottom left). With the bar hidden the video fills `bounds`.
     public static func frames(in bounds: CGRect, barHidden: Bool) -> (video: CGRect, bar: CGRect) {

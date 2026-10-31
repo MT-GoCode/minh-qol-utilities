@@ -196,6 +196,9 @@ public final class MpvPlayer {
     /// Relative seek, frame-exact (`exact`): the pause state is left as it was.
     public func seek(by seconds: Double) throws { try command(["seek", String(seconds), "relative+exact"]) }
 
+    /// Frame-exact jump to `seconds` from the start.
+    public func seek(to seconds: Double) throws { try command(["seek", String(seconds), "absolute+exact"]) }
+
     public func seek(toFraction fraction: Double) throws { try command(["seek", String(fraction * 100), "absolute-percent+exact"]) }
 
     /// Steps `count` frames forward, or back when negative.
