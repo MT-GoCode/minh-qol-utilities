@@ -10,12 +10,18 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     var onClose: ((PlayerWindowController) -> Void)?
     private let player: MpvPlayer
     private let content: PlayerContentView
+    private let id: UUID
+    private let path: String
+    private let session: SessionRegistry
+    private let restored: Bool
     private var settings = Settings()
 
     private var bar: ControlBar { content.bar }
     private var video: GLVideoView { content.video }
 
-    init(_ request: OpenRequest) throws {
+    /// `restoring` is the saved state of a window from the last run: it comes back at its frame, with its bar, paused
+    /// at the position the file was left at.
+    init(_ request: OpenRequest, store: StateStore, session: SessionRegistry, restoring: WindowState? = nil) throws {
         player = try MpvPlayer(output: .video)
         guard let video = GLVideoView(player: player) else { throw NoOpenGL() }
         let bar = ControlBar(settings: settings)
@@ -30,30 +36,62 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         window.title = request.file.lastPathComponent
         window.representedURL = request.file
         window.isReleasedWhenClosed = false
+        id = restoring?.id ?? UUID()
+        path = request.file.path
+        self.session = session
+        restored = restoring != nil
+        if let restoring {
+            window.setFrame(restoring.frame.rect, display: false)
+            content.barHidden = restoring.barHidden
+        }
         super.init(window: window)
         window.delegate = self
         window.handleKey = { [weak self] in self?.handleKey($0) ?? false }
         bar.onCommand = { [weak self] in self?.perform($0) }
-        player.onEvent = { [weak self] in self?.handle($0) }
+        let memory = FileMemory(store: store, file: request.file)
+        player.onEvent = { [weak self] event in
+            guard let self else { return }
+            do { try memory.handle(event, player: self.player) } catch { self.bar.showFeedback("Error: \(error)") }
+            self.handle(event)
+        }
         video.onReady = { [weak self] in
-            do { try self?.player.load(request.file, start: request.start) } catch { self?.fail(error) }
+            guard let self else { return }
+            do {
+                if self.restored { try self.player.setPaused(true) }
+                try memory.open(request.file, in: self.player, start: request.start)
+            } catch { self.fail(error) }
         }
     }
 
     required init?(coder: NSCoder) { fatalError("PlayerWindowController is created in code") }
 
-    /// Shows the window and returns the point the next window should cascade from.
+    /// Shows the window and returns the point the next window should cascade from. A restored window stays where it was.
     func show(cascadingFrom point: NSPoint) -> NSPoint {
         guard let window else { return point }
-        if point == .zero { window.center() }
-        let next = window.cascadeTopLeft(from: point == .zero ? NSPoint(x: window.frame.minX, y: window.frame.maxY) : point)
+        var next = point
+        if !restored {
+            if point == .zero { window.center() }
+            next = window.cascadeTopLeft(from: point == .zero ? NSPoint(x: window.frame.minX, y: window.frame.maxY) : point)
+        }
         showWindow(nil)
+        session.opened(WindowState(id: id, path: path, frame: Frame(window.frame), barHidden: content.barHidden))
         return next
     }
 
     func windowWillClose(_ notification: Notification) {
         video.shutdown()
+        session.closed(id)
         onClose?(self)
+    }
+
+    func windowDidMove(_ notification: Notification) { reportFrame() }
+
+    func windowDidResize(_ notification: Notification) { reportFrame() }
+
+    /// A full-screen window reports nothing: the frame to bring back is the one it had before.
+    private func reportFrame() {
+        guard let window, !window.styleMask.contains(.fullScreen) else { return }
+        session.moved(id, to: Frame(window.frame))
     }
 
     // MARK: Commands
@@ -81,7 +119,9 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     private func performInterface(_ action: InterfaceAction) {
         switch action {
         case .fullscreen: window?.toggleFullScreen(nil)
-        case .toggleBar: content.barHidden.toggle()
+        case .toggleBar:
+            content.barHidden.toggle()
+            session.barToggled(id, hidden: content.barHidden)
         case .screenshot, .pauseAll: bar.showFeedback("\(action) is not available yet")
         }
     }
@@ -102,4 +142,9 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         NSAlert(error: error).runModal()
         close()
     }
+}
+
+extension Frame {
+    init(_ rect: NSRect) { self.init(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height) }
+    var rect: NSRect { NSRect(x: x, y: y, width: width, height: height) }
 }

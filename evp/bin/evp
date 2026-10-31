@@ -1,6 +1,7 @@
 #!/bin/bash
 # evp [-g] [--time 4:52] <file>...   open files in Ergonomic Video Player (one window each)
 #   -g, --background   do not bring the app to the front (like `open -g`)
+# EVP_HOME=<dir> starts the app with its state in <dir> (it only takes effect when the app is not running yet).
 set -euo pipefail
 APP="${EVP_APP:-$HOME/Applications/EVP.app}"
 usage() { echo "usage: evp [-g] [--time 4:52] <file>..." >&2; }
@@ -8,6 +9,8 @@ die() { echo "evp: $*" >&2; exit 1; }
 
 time=""
 open_flags=()
+env_flags=()
+[ -z "${EVP_HOME:-}" ] || env_flags=(--env "EVP_HOME=$EVP_HOME")
 files=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -29,5 +32,5 @@ for file in "${files[@]}"; do
 q = {"path": sys.argv[1]}
 if sys.argv[2]: q["time"] = sys.argv[2]
 print("evp://open?" + u.urlencode(q, quote_via=u.quote))' "$absolute" "$time")
-  open ${open_flags[@]+"${open_flags[@]}"} -a "$APP" "$url"   # macOS bash 3.2 treats an empty array as unset
+  open ${open_flags[@]+"${open_flags[@]}"} ${env_flags[@]+"${env_flags[@]}"} -a "$APP" "$url"   # macOS bash 3.2 treats an empty array as unset
 done

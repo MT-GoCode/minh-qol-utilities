@@ -99,6 +99,8 @@ class E2ETestCase: XCTestCase {
 final class RunningApp {
     let application: NSRunningApplication
     private let scratch: URL
+    /// The app's state folder for this run (`EVP_HOME`): a test never touches the real saved state.
+    var home: URL { scratch.appendingPathComponent("home") }
 
     private init(_ application: NSRunningApplication, scratch: URL) {
         (self.application, self.scratch) = (application, scratch)
@@ -134,16 +136,16 @@ final class RunningApp {
     /// Runs `bin/evp` for `arguments` against `appURL` and waits for that app to be running.
     static func launch(_ arguments: [String], appURL: URL = Paths.app, cli: URL = Paths.cli) throws -> RunningApp {
         try waitForNoOtherEVP()
+        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("evp-e2e-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratch.appendingPathComponent("home"), withIntermediateDirectories: true)
         let process = Process()
         process.executableURL = cli
         // -g: the test runs in the background and must not take focus from whoever is using the machine.
         process.arguments = ["-g"] + arguments
-        process.environment = ["EVP_APP": appURL.path, "PATH": "/usr/bin:/bin"]
+        process.environment = ["EVP_APP": appURL.path, "EVP_HOME": scratch.appendingPathComponent("home").path, "PATH": "/usr/bin:/bin"]
         try process.run()
         process.waitUntilExit()
         guard process.terminationStatus == 0 else { throw Failure(description: "evp exited \(process.terminationStatus)") }
-        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("evp-e2e-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
         let deadline = Date().addingTimeInterval(15)
         while Date() < deadline {
             if let application = running(at: appURL) { return RunningApp(application, scratch: scratch) }
