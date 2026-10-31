@@ -148,6 +148,26 @@ final class IntegrationPlayerTests: XCTestCase {
         }
     }
 
+    func testSubtitleSidecarIsListedAndSelectable() throws {
+        let s = try Session(loading: "sub.mkv")
+        let subs = try s.player.tracks().filter { $0.kind == .sub }
+        XCTAssertEqual(subs.map(\.language), ["en"], "the sidecar sub.en.srt is found by name")
+        let id = try XCTUnwrap(subs.first?.id)
+        try s.player.select(.sub, id: id)
+        XCTAssertEqual(try s.player.property("sid"), String(id))
+        XCTAssertEqual(try s.player.tracks().filter { $0.kind == .sub }.map(\.selected), [true])
+        try s.player.select(.sub, id: nil)
+        XCTAssertEqual(try s.player.property("sid"), "no")
+        XCTAssertEqual(try s.player.tracks().filter { $0.kind == .sub }.map(\.selected), [false])
+    }
+
+    func testTrackMenuFollowsTheEngine() throws {
+        let s = try Session(loading: "t2.mkv")
+        XCTAssertEqual(TrackMenu.items(for: .audio, in: try s.player.tracks(), locale: Locale(identifier: "en_US")).map(\.title), ["English", "French"])
+        try s.player.select(.audio, id: 2)
+        XCTAssertEqual(TrackMenu.items(for: .audio, in: try s.player.tracks()).map(\.isChecked), [false, true])
+    }
+
     func testTrackListAndSelection() throws {
         let s = try Session(loading: "t2.mkv")
         let audio = try s.player.tracks().filter { $0.kind == .audio }

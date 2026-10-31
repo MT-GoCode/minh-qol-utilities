@@ -18,6 +18,10 @@ public struct Track: Equatable {
     public let language: String?
     public let title: String?
     public let selected: Bool
+
+    public init(id: Int, kind: Kind, language: String?, title: String?, selected: Bool) {
+        (self.id, self.kind, self.language, self.title, self.selected) = (id, kind, language, title, selected)
+    }
 }
 
 /// The only code that touches libmpv. Create it and use it on the main thread; events arrive on the main queue.
@@ -205,6 +209,9 @@ public final class MpvPlayer {
     public func frameStep(_ count: Int) throws {
         for _ in 0..<abs(count) { try command([count > 0 ? "frame-step" : "frame-back-step"]) }
     }
+
+    /// Saves the frame being shown as a PNG at the video's own resolution, without subtitles or on-screen text.
+    public func screenshot(to url: URL) throws { try command(["screenshot-to-file", url.path, "video"]) }
 
     public func toggleMute() throws { try command(["cycle", "mute"]) }
 
