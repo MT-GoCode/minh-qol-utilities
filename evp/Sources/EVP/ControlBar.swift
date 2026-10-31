@@ -27,6 +27,8 @@ final class ControlBar: NSView {
     }
 
     var onCommand: ((Command) -> Void)?
+    /// The lines of the audio or subtitle menu, asked for each time one opens.
+    var trackItems: ((Track.Kind) throws -> [TrackMenuItem])?
 
     private let scrub = ScrubBar()
     private let timeField = TimeField()
@@ -75,10 +77,14 @@ final class ControlBar: NSView {
         let volume = item(volumeSlider, width: 96, menuTitle: "Volume Up", command: .action(.volumeUp))
         let fullscreen = item(CommandButton(title: "⛶", command: .action(.fullscreen), id: "fullscreen"), width: 32,
                               menuTitle: "Enter Full Screen", command: .action(.fullscreen))
+        let screenshot = item(CommandButton(symbol: "camera", label: "Copy Screenshot", command: .action(.screenshot), id: "screenshot"), width: 32,
+                              menuTitle: "Copy Screenshot", command: .action(.screenshot))
+        let subtitles = trackItem(.sub, symbol: "captions.bubble", title: "Subtitles", id: "subtitle-tracks")
+        let audio = trackItem(.audio, symbol: "waveform", title: "Audio Track", id: "audio-tracks")
         beforePlay = [back10, back5]
         afterPlay = [forward5, forward10]
-        farRight = [speed, volume, fullscreen]
-        keepFirst = [back5, forward5, back10, forward10, speed, volume, fullscreen]
+        farRight = [subtitles, audio, screenshot, speed, volume, fullscreen]
+        keepFirst = [back5, forward5, back10, forward10, speed, volume, fullscreen, screenshot, subtitles, audio]
         keepFirst.forEach { addSubview($0.view) }
         overflowMenu.items = keepFirst.map(\.menuItem)
     }
@@ -155,7 +161,32 @@ final class ControlBar: NSView {
     @objc private func volumeChanged(_ sender: NSSlider) { onCommand?(.setVolume(sender.doubleValue)) }
 
     @objc private func showOverflow(_ sender: NSButton) {
+        for item in overflowMenu.items { if let kind = (item as? TrackMenuEntry)?.kind, let menu = item.submenu { fillTracks(menu, kind) } }
         overflowMenu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height), in: sender)
+    }
+
+    @objc private func showTracks(_ sender: TrackButton) {
+        let menu = NSMenu()
+        fillTracks(menu, sender.kind)
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height), in: sender)
+    }
+
+    /// One line per track, the playing one checked; choosing one sends `.selectTrack`.
+    private func fillTracks(_ menu: NSMenu, _ kind: Track.Kind) {
+        menu.removeAllItems()
+        do {
+            let lines = try trackItems?(kind) ?? []
+            for line in lines {
+                let item = CommandMenuItem(title: line.title, command: .selectTrack(kind, line.trackID))
+                item.target = self
+                item.action = #selector(commandChosen)
+                item.state = line.isChecked ? .on : .off
+                menu.addItem(item)
+            }
+            if lines.isEmpty { menu.addItem(withTitle: "None in this file", action: nil, keyEquivalent: "") }
+        } catch {
+            menu.addItem(withTitle: "Error: \(error)", action: nil, keyEquivalent: "")
+        }
     }
 
     // MARK: Building
@@ -167,6 +198,15 @@ final class ControlBar: NSView {
         menuItem.target = self
         menuItem.action = #selector(commandChosen)
         return Item(view: view, width: width, menuItem: menuItem)
+    }
+
+    private func trackItem(_ kind: Track.Kind, symbol: String, title: String, id: String) -> Item {
+        let button = TrackButton(kind: kind, symbol: symbol, label: title, id: id)
+        button.target = self
+        button.action = #selector(showTracks)
+        let entry = TrackMenuEntry(kind: kind, title: title)
+        entry.submenu = NSMenu(title: title)
+        return Item(view: button, width: 32, menuItem: entry)
     }
 
     private static func label(_ text: String, id: String, width: CGFloat, font: NSFont) -> NSTextField {
@@ -192,7 +232,43 @@ final class CommandButton: NSButton {
         frame.size.width = 32
     }
 
+    /// A button drawn with an SF Symbol; `label` is what VoiceOver and the tooltip say.
+    convenience init(symbol: String, label: String, command: Command, id: String) {
+        self.init(title: "", command: command, id: id)
+        image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+        toolTip = label
+    }
+
     required init?(coder: NSCoder) { fatalError("CommandButton is created in code") }
+}
+
+/// The audio or subtitle button: opens the menu of that kind of track.
+final class TrackButton: NSButton {
+    let kind: Track.Kind
+
+    init(kind: Track.Kind, symbol: String, label: String, id: String) {
+        self.kind = kind
+        super.init(frame: .zero)
+        title = ""
+        image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+        toolTip = label
+        bezelStyle = .accessoryBarAction
+        setAccessibilityIdentifier(id)
+    }
+
+    required init?(coder: NSCoder) { fatalError("TrackButton is created in code") }
+}
+
+/// The `…` menu's line for the audio or subtitle tracks; its submenu is filled when the `…` menu opens.
+final class TrackMenuEntry: NSMenuItem {
+    let kind: Track.Kind
+
+    init(kind: Track.Kind, title: String) {
+        self.kind = kind
+        super.init(title: title, action: nil, keyEquivalent: "")
+    }
+
+    required init(coder: NSCoder) { fatalError("TrackMenuEntry is created in code") }
 }
 
 final class CommandMenuItem: NSMenuItem {

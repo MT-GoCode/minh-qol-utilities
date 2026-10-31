@@ -162,6 +162,18 @@ final class IntegrationPlayerTests: XCTestCase {
         XCTAssertEqual(try s.player.tracks().filter { $0.kind == .sub }.map(\.selected), [false])
     }
 
+    func testATrackChosenFromAMenuIsTheOneThatPlays() throws {
+        let audio = try Session(loading: "t2.mkv")
+        XCTAssertEqual(try audio.player.perform(.selectTrack(.audio, 2), settings: Settings()), .done(feedback: nil))
+        XCTAssertEqual(try audio.player.property("aid"), "2")
+        let subtitles = try Session(loading: "sub.mkv")
+        let id = try XCTUnwrap(try subtitles.player.tracks().first { $0.kind == .sub }?.id)
+        _ = try subtitles.player.perform(.selectTrack(.sub, id), settings: Settings())
+        XCTAssertEqual(try subtitles.player.property("sid"), String(id))
+        _ = try subtitles.player.perform(.selectTrack(.sub, nil), settings: Settings())
+        XCTAssertEqual(try subtitles.player.property("sid"), "no")
+    }
+
     func testTrackMenuFollowsTheEngine() throws {
         let s = try Session(loading: "t2.mkv")
         XCTAssertEqual(TrackMenu.items(for: .audio, in: try s.player.tracks(), locale: Locale(identifier: "en_US")).map(\.title), ["English", "French"])

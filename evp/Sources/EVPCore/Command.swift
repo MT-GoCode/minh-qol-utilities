@@ -7,4 +7,6 @@ public enum Command: Equatable {
     case seekFraction(Double)
     /// From the volume slider: an absolute volume (0 to 100).
     case setVolume(Double)
+    /// From an Audio or Subtitles menu: the track to play, nil for no subtitles.
+    case selectTrack(Track.Kind, Int?)
 }

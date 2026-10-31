@@ -27,6 +27,9 @@ extension MpvPlayer {
         case .setVolume(let volume):
             try setVolume(volume)
             return .done(feedback: nil)
+        case .selectTrack(let kind, let id):
+            try select(kind, id: id)
+            return .done(feedback: nil)
         case .action(let action):
             return try perform(action, settings: settings)
         }

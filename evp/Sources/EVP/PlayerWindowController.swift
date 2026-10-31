@@ -53,6 +53,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
         window.handleKey = { [weak self] in self?.handleKey($0) ?? false }
         bar.onCommand = { [weak self] in self?.perform($0) }
+        bar.trackItems = { [weak self] kind in try self?.trackItems(kind) ?? [] }
         let memory = FileMemory(store: store, file: request.file)
         player.onEvent = { [weak self] event in
             guard let self else { return }
@@ -94,9 +95,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     /// The lines of the Audio or Subtitles menu for the file playing here.
     func trackItems(_ kind: Track.Kind) throws -> [TrackMenuItem] { TrackMenu.items(for: kind, in: try player.tracks()) }
 
-    func select(_ kind: Track.Kind, trackID: Int?) {
-        do { try player.select(kind, id: trackID) } catch { bar.showFeedback("Error: \(error)") }
-    }
+    func select(_ kind: Track.Kind, trackID: Int?) { perform(.selectTrack(kind, trackID)) }
 
     /// What the global pause key acts on.
     var pausable: Pausable { player }
