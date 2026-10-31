@@ -219,6 +219,11 @@ final class RunningApp {
         throw Failure(description: "timed out waiting on \(id); last read: \(last)")
     }
 
+    /// Types `chord` (see `evpdrive key`) into the app; `count` above 1 sends key repeats.
+    func key(_ chord: String, count: Int = 1) throws {
+        _ = try driver(["key", String(application.processIdentifier), chord, String(count)], asApp: true)
+    }
+
     func resize(width: Int, height: Int) throws {
         _ = try driver(["resize", String(application.processIdentifier), String(width), String(height)], asApp: true)
     }
@@ -232,11 +237,15 @@ final class RunningApp {
     /// Takes snapshots until `done` accepts one; the last measurement is part of the failure message.
     func waitForSnapshot(timeout: TimeInterval = 10, _ what: String, until done: (WindowInfo, Pixels) -> Bool) throws -> (WindowInfo, Pixels) {
         let deadline = Date().addingTimeInterval(timeout)
-        var last = "no window"
+        var last = "nothing yet"
         while Date() < deadline {
-            if let window = try? playerWindow(), let pixels = try? snapshot(window) {
+            do {
+                let window = try playerWindow()
+                let pixels = try snapshot(window)
                 if done(window, pixels) { return (window, pixels) }
                 last = "window \(window.width)x\(window.height), image \(pixels.width)x\(pixels.height)"
+            } catch {
+                last = "\(error)"
             }
             usleep(200_000)
         }

@@ -6,7 +6,7 @@
 //   evpdrive read <pid> <id>             print the value, title or description of that element
 //   evpdrive tree <pid>                  print the accessibility tree (role and identifier), for debugging
 //   evpdrive snapshot <window id> <png>  window-scoped screenshot
-//   evpdrive key <pid|hid> <chord> [n]   chord like right, shift+right, j, space, ctrl+space; n>1 sends autorepeat
+//   evpdrive key <pid|hid> <chord> [n]   chord like right, shift+right, j, space, ctrl+space; n presses in a row
 //   evpdrive media <code>...             media keys (16 play/pause, 17 next, 18 previous, 19 fast, 20 rewind)
 import AppKit
 import ApplicationServices
@@ -42,17 +42,17 @@ func postKey(target: Target, chord: String, count: Int) {
         guard let flag = modifiers[m] else { fail("unknown modifier \(m)") }
         flags.insert(flag)
     }
+    // macOS drops synthetic key-downs that carry the autorepeat flag, so `count` is that many separate presses.
     for i in 0..<count {
         for down in [true, false] {
             let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)!
             event.flags = flags
-            if i > 0 && down { event.setIntegerValueField(.keyboardEventAutorepeat, value: 1) }
             switch target {
             case .hid: event.post(tap: .cghidEventTap)
             case .pid(let pid): event.postToPid(pid)
             }
         }
-        usleep(30_000)  // the fastest macOS key-repeat setting
+        usleep(30_000)  // the fastest macOS key-repeat setting; also lets the events arrive before this tool exits
     }
 }
 

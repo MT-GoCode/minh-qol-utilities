@@ -20,7 +20,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         guard let video = GLVideoView(player: player) else { throw NoOpenGL() }
         let bar = ControlBar(settings: settings)
         content = PlayerContentView(video: video, bar: bar)
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 540),
+        let window = PlayerWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 540),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.contentView = content
         window.contentMinSize = NSSize(width: bar.minimumWidth, height: PlayerLayout.barHeight + 1)
@@ -31,6 +31,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         super.init(window: window)
         window.delegate = self
+        window.handleKey = { [weak self] in self?.handleKey($0) ?? false }
         bar.onCommand = { [weak self] in self?.perform($0) }
         player.onEvent = { [weak self] in self?.handle($0) }
         video.onReady = { [weak self] in
@@ -55,6 +56,15 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     }
 
     // MARK: Commands
+
+    /// A key press: looked up in the keymap, run once per press unless the action repeats when held. Global actions
+    /// are not the window's.
+    private func handleKey(_ event: NSEvent) -> Bool {
+        guard let chord = KeyChord.chord(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers ?? "", modifiers: Modifiers(event.modifierFlags)),
+              let action = settings.keymap.action(for: chord), !Action.global.contains(action) else { return false }
+        if action.runs(onRepeat: event.isARepeat) { perform(.action(action)) }
+        return true
+    }
 
     func perform(_ command: Command) {
         do {

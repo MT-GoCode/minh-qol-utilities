@@ -39,6 +39,17 @@ public struct KeyChord: Hashable, Codable, CustomStringConvertible {
         self.init(key: key, modifiers: modifiers)
     }
 
+    /// The Mac virtual key codes of the named keys; every other key is named by the character it types.
+    private static let namedKeyCodes: [UInt16: String] = [
+        49: "space", 48: "tab", 123: "left", 124: "right", 125: "down", 126: "up", 36: "return", 53: "escape", 51: "delete",
+    ]
+
+    /// The chord for a key press: `characters` is what the key types without modifiers (shift only changes the case,
+    /// which the `shift` modifier already records). nil for keys that have no chord.
+    public static func chord(keyCode: UInt16, characters: String, modifiers: Modifiers) -> KeyChord? {
+        KeyChord(key: namedKeyCodes[keyCode] ?? characters.lowercased(), modifiers: modifiers)
+    }
+
     public var description: String {
         (Self.modifierNames.filter { modifiers.contains($0.1) }.map(\.0) + [key]).joined(separator: "+")
     }
