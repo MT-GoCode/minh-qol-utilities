@@ -44,6 +44,19 @@ public struct KeyChord: Hashable, Codable, CustomStringConvertible {
         49: "space", 48: "tab", 123: "left", 124: "right", 125: "down", 126: "up", 36: "return", 53: "escape", 51: "delete",
     ]
 
+    /// US-layout virtual key codes of the character keys, for registering a chord with the system.
+    private static let characterKeyCodes: [String: UInt16] = [
+        "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9, "b": 11, "q": 12, "w": 13, "e": 14,
+        "r": 15, "y": 16, "t": 17, "1": 18, "2": 19, "3": 20, "4": 21, "6": 22, "5": 23, "=": 24, "9": 25, "7": 26, "-": 27,
+        "8": 28, "0": 29, "]": 30, "o": 31, "u": 32, "[": 33, "i": 34, "p": 35, "l": 37, "j": 38, "'": 39, "k": 40, ";": 41,
+        "\\": 42, ",": 43, "/": 44, "n": 45, "m": 46, ".": 47, "`": 50,
+    ]
+
+    /// The Mac virtual key code that types this chord's key; nil for a key this table does not know.
+    public var virtualKeyCode: UInt16? {
+        Self.namedKeyCodes.first { $0.value == key }?.key ?? Self.characterKeyCodes[key]
+    }
+
     /// The chord for a key press: `characters` is what the key types without command or control (letters arrive
     /// lowercased, the `shift` modifier records the case). A shifted symbol or digit keeps its shifted character, so
     /// shift plus `,` is the chord `shift+<`. nil for keys that have no chord.

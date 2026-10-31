@@ -67,4 +67,19 @@ final class UnitKeyChordTests: XCTestCase {
         XCTAssertEqual(Set(repeating), [.seekBackShort, .seekForwardShort, .seekBackLong, .seekForwardLong, .volumeUp, .volumeDown,
                                         .speedUp, .speedDown, .frameBack, .frameForward])
     }
+
+    func testVirtualKeyCodesMatchTheKeysOfAMacKeyboard() throws {
+        let known: [(String, UInt16)] = [("space", 49), ("ctrl+space", 49), ("a", 0), ("m", 46), (",", 43), ("/", 44), ("left", 123), ("tab", 48), ("5", 23)]
+        for (text, code) in known { XCTAssertEqual(KeyChord(text)?.virtualKeyCode, code, text) }
+        XCTAssertNil(KeyChord(key: "é")?.virtualKeyCode, "a key outside the US table has no code")
+    }
+
+    func testEveryKeyThatHasACodeComesBackAsItself() throws {
+        for key in KeyChord.namedKeys.union(Set("abcdefghijklmnopqrstuvwxyz0123456789,./;'[]-=`\\".map(String.init))) {
+            let chord = try XCTUnwrap(KeyChord(key: key))
+            let code = try XCTUnwrap(chord.virtualKeyCode, key)
+            let named = KeyChord.namedKeys.contains(key)
+            XCTAssertEqual(KeyChord.chord(keyCode: code, characters: named ? "" : key, modifiers: []), chord, "\(key) via code \(code)")
+        }
+    }
 }

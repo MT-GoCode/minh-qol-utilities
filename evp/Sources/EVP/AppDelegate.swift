@@ -7,6 +7,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var store: StateStore!
     private var session: SessionRegistry!
     private var reportedFlushError = false
+    private let pauseAll = PauseAll()
+    private var hotkey: GlobalHotkey?
+    private var mediaKeys: MediaKeys?
 
     /// `EVP_HOME` moves the state elsewhere (the tests use a scratch folder).
     private static var stateDirectory: URL {
@@ -28,11 +31,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             alert.runModal()
             exit(1)
         }
+        let problems = store.state.settings.problems()
+        if !problems.isEmpty {
+            let alert = NSAlert()
+            alert.messageText = "The saved settings are not valid"
+            alert.informativeText = problems.joined(separator: "\n") + "\n\nFix \(Self.stateDirectory.path)/state.json and start again."
+            alert.runModal()
+            exit(1)
+        }
         session = SessionRegistry(store: store)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenu.make(target: self)
+        mediaKeys = MediaKeys(decoupled: store.state.settings.decoupleMediaKeys) { [weak self] in self?.playingWindow() }
+        registerPauseAllHotkey()
         guard store.state.settings.restoreWindowsOnLaunch else {
             store.update { $0.windows = [] }
             return
@@ -62,11 +75,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         do {
             let controller = try PlayerWindowController(request, store: store, session: session, restoring: restoring)
             controller.onClose = { [weak self] closed in self?.players.removeAll { $0 === closed } }
+            controller.onPlayingChanged = { [weak self] in self?.mediaKeys?.refresh() }
             players.append(controller)
             cascadePoint = controller.show(cascadingFrom: cascadePoint)
         } catch {
             NSAlert(error: error).runModal()
         }
+    }
+
+    /// The window the media keys act on: the key window if it plays, else any playing window.
+    private func playingWindow() -> PlayerWindowController? {
+        players.first { $0.isPlaying && $0.window?.isKeyWindow == true } ?? players.first { $0.isPlaying }
+    }
+
+    private func registerPauseAllHotkey() {
+        guard let chord = store.state.settings.keymap.chords[.pauseAll] else { return }
+        hotkey = GlobalHotkey { [weak self] in
+            guard let self else { return }
+            do { try self.pauseAll.press(over: self.players.map(\.pausable)) } catch { self.players.first?.showFeedback("Error: \(error)") }
+        }
+        do { try hotkey?.register(chord) } catch { NSAlert(error: error).runModal() }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

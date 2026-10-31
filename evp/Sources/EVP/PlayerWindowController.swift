@@ -8,13 +8,17 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     }
 
     var onClose: ((PlayerWindowController) -> Void)?
+    /// Called when this window starts or stops playing.
+    var onPlayingChanged: (() -> Void)?
+    private(set) var isPlaying = false
     private let player: MpvPlayer
     private let content: PlayerContentView
     private let id: UUID
     private let path: String
     private let session: SessionRegistry
     private let restored: Bool
-    private var settings = Settings()
+    private let store: StateStore
+    private var settings: Settings { store.state.settings }
 
     private var bar: ControlBar { content.bar }
     private var video: GLVideoView { content.video }
@@ -24,7 +28,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     init(_ request: OpenRequest, store: StateStore, session: SessionRegistry, restoring: WindowState? = nil) throws {
         player = try MpvPlayer(output: .video)
         guard let video = GLVideoView(player: player) else { throw NoOpenGL() }
-        let bar = ControlBar(settings: settings)
+        let bar = ControlBar(settings: store.state.settings)
         content = PlayerContentView(video: video, bar: bar)
         let window = PlayerWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 540),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
@@ -39,6 +43,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         id = restoring?.id ?? UUID()
         path = request.file.path
         self.session = session
+        self.store = store
         restored = restoring != nil
         if let restoring {
             window.setFrame(restoring.frame.rect, display: false)
@@ -81,8 +86,15 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         video.shutdown()
         session.closed(id)
+        isPlaying = false
         onClose?(self)
+        onPlayingChanged?()
     }
+
+    /// What the global pause key acts on.
+    var pausable: Pausable { player }
+
+    func showFeedback(_ text: String) { bar.showFeedback(text) }
 
     func windowDidMove(_ notification: Notification) { reportFrame() }
 
@@ -146,7 +158,10 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         case .loadFailed(let error): fail(error)
         case .time(let seconds): bar.setTime(seconds)
         case .duration(let seconds): bar.setDuration(seconds)
-        case .paused(let paused): bar.setPaused(paused)
+        case .paused(let paused):
+            bar.setPaused(paused)
+            isPlaying = !paused
+            onPlayingChanged?()
         case .speed(let speed): bar.setSpeed(speed)
         case .volume(let volume): bar.setVolume(volume)
         case .fileLoaded, .playbackRestart, .muted, .endOfFile: break
