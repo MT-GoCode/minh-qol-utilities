@@ -1,6 +1,16 @@
 import AppKit
 
 enum MainMenu {
+    /// A menu whose lines the delegate fills in each time it opens; `remember` keeps it so the delegate can tell which one opened.
+    private static func submenu(_ title: String, delegate: NSMenuDelegate, remember: inout NSMenu?) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        let menu = NSMenu(title: title)
+        menu.delegate = delegate
+        item.submenu = menu
+        remember = menu
+        return item
+    }
+
     /// `target` handles Open and builds the Open Recent list (it is the menu's delegate).
     static func make(target: AppDelegate) -> NSMenu {
         let main = NSMenu()
@@ -16,10 +26,7 @@ enum MainMenu {
         let fileMenu = NSMenu(title: "File")
         let open = fileMenu.addItem(withTitle: "Open…", action: #selector(AppDelegate.openDocument(_:)), keyEquivalent: "o")
         open.target = target
-        let recent = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
-        recent.submenu = NSMenu(title: "Open Recent")
-        recent.submenu?.delegate = target
-        fileMenu.addItem(recent)
+        fileMenu.addItem(submenu("Open Recent", delegate: target, remember: &target.recentMenu))
         file.submenu = fileMenu
         main.addItem(file)
 
@@ -32,6 +39,9 @@ enum MainMenu {
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         edit.submenu = editMenu
         main.addItem(edit)
+
+        main.addItem(submenu("Audio", delegate: target, remember: &target.audioMenu))
+        main.addItem(submenu("Subtitles", delegate: target, remember: &target.subtitleMenu))
 
         let window = NSMenuItem()
         let windowMenu = NSMenu(title: "Window")

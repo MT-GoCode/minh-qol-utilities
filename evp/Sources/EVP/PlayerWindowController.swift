@@ -91,6 +91,13 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         onPlayingChanged?()
     }
 
+    /// The lines of the Audio or Subtitles menu for the file playing here.
+    func trackItems(_ kind: Track.Kind) throws -> [TrackMenuItem] { TrackMenu.items(for: kind, in: try player.tracks()) }
+
+    func select(_ kind: Track.Kind, trackID: Int?) {
+        do { try player.select(kind, id: trackID) } catch { bar.showFeedback("Error: \(error)") }
+    }
+
     /// What the global pause key acts on.
     var pausable: Pausable { player }
 

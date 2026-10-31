@@ -1,7 +1,19 @@
 import AppKit
 import EVPCore
 
+/// What a line of the Audio or Subtitles menu does when chosen.
+private final class TrackChoice {
+    let kind: Track.Kind
+    let trackID: Int?
+    weak var window: PlayerWindowController?
+
+    init(kind: Track.Kind, trackID: Int?, window: PlayerWindowController) { (self.kind, self.trackID, self.window) = (kind, trackID, window) }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    var recentMenu: NSMenu?
+    var audioMenu: NSMenu?
+    var subtitleMenu: NSMenu?
     private var players: [PlayerWindowController] = []
     private var cascadePoint = NSPoint.zero
     private var store: StateStore!
@@ -148,14 +160,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         application(NSApp, open: [URL(fileURLWithPath: path)])
     }
 
-    /// The Open Recent menu is rebuilt each time it opens, from the state, so it never goes stale.
+    /// Menus are rebuilt each time they open, from the state or the playing file, so they never go stale.
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        for entry in RecentEntry.entries(from: store.state) {
-            let item = NSMenuItem(title: "\(entry.title)  (\(entry.position))", action: #selector(openRecent(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = entry.path
-            menu.addItem(item)
+        if menu === recentMenu {
+            for entry in RecentEntry.entries(from: store.state) {
+                let item = NSMenuItem(title: "\(entry.title)  (\(entry.position))", action: #selector(openRecent(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = entry.path
+                menu.addItem(item)
+            }
+        } else if menu === audioMenu {
+            fillTrackMenu(menu, .audio)
+        } else if menu === subtitleMenu {
+            fillTrackMenu(menu, .sub)
         }
+    }
+
+    private func fillTrackMenu(_ menu: NSMenu, _ kind: Track.Kind) {
+        guard let window = NSApp.keyWindow?.windowController as? PlayerWindowController ?? players.first else {
+            menu.addItem(withTitle: "No video open", action: nil, keyEquivalent: "")
+            return
+        }
+        do {
+            let items = try window.trackItems(kind)
+            for line in items {
+                let item = NSMenuItem(title: line.title, action: #selector(selectTrack(_:)), keyEquivalent: "")
+                item.target = self
+                item.state = line.isChecked ? .on : .off
+                item.representedObject = TrackChoice(kind: kind, trackID: line.trackID, window: window)
+                menu.addItem(item)
+            }
+            if items.isEmpty { menu.addItem(withTitle: "None in this file", action: nil, keyEquivalent: "") }
+        } catch {
+            menu.addItem(withTitle: "Error: \(error)", action: nil, keyEquivalent: "")
+        }
+    }
+
+    @objc private func selectTrack(_ sender: NSMenuItem) {
+        guard let choice = sender.representedObject as? TrackChoice else { return }
+        choice.window?.select(choice.kind, trackID: choice.trackID)
     }
 }
