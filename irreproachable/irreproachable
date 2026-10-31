@@ -917,7 +917,8 @@ SILENT = "Never run any command. Reply with one word."
 SLEEPER = ("Whenever a message starts with `Acknowledge first: irreproachable ack <nonce>`, run that command, then reply "
            "with one word. When told SLEEP, run in the foreground with the Bash tool, timeout 60000: "
            "`python3 -c 'import time; time.sleep(55); print(\"SLEPT\")'`, then reply DONE. Run no other command.")
-GOAL = "selftest goal: reply with one word"
+GOAL = ("selftest goal: this goal is never met, so never run irreproachable clear; reply to each message with one "
+        "word")
 
 
 def selftest(only):
@@ -1136,11 +1137,11 @@ exec "{REAL_PASEO}" "$@"
             check("a second message with a different nonce", len(nonces) >= 2 and nonces[0] != nonces[1], nonces)
             r = run("ls")
             check("ls shows the goal watching", re.search(rf"^{aid[:8]}\s+watching", r.stdout, re.M), r.stdout)
-            old = read_goal(aid)[0]["token"]
+            old = (read_goal(aid)[0] or {}).get("token")
             r = run("new", GOAL, "--agent", aid, "--steer-prompt", "X")
-            g = read_goal(aid)[0]
+            g = read_goal(aid)[0] or {}
             check("--steer-prompt X is stored, and new logs END <old> replaced",
-                  g["steer_text"] == "X" and events(aid, f"END {old} replaced"), (g, log_lines(aid)[-3:]))
+                  g.get("steer_text") == "X" and old and events(aid, f"END {old} replaced"), (g, log_lines(aid)[-3:]))
             finish(aid)
 
         if want("steer"):
@@ -1479,7 +1480,7 @@ exec "{REAL_PASEO}" "$@"
             check("no message after the END cleared line", not [x for x in sent(aid) if x >= t_c - 0.5], log_lines(aid))
             unflag("inspect-delay")
             new(aid, "--idle-after", "20s")
-            tok = read_goal(aid)[0]["token"]
+            tok = (read_goal(aid)[0] or {}).get("token")
             new(aid, "--idle-after", "20s")
             check("new twice logs END <old> replaced and starts the new goal",
                   events(aid, f"END {tok} replaced") and wait_for(lambda: len(events(aid, "START ")) >= 2, 10, 0.5),
