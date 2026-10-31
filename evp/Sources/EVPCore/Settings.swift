@@ -45,10 +45,10 @@ extension Settings {
         func require(_ ok: Bool, _ message: String) { if !ok { found.append(message) } }
         require(seekShortSeconds > 0 && seekShortSeconds.isFinite, "The short seek step must be more than 0 seconds.")
         require(seekLongSeconds > 0 && seekLongSeconds.isFinite, "The long seek step must be more than 0 seconds.")
-        require(speedStep > 0 && speedStep < MpvPlayer.speedRange.upperBound, "The speed step must be more than 0 and less than \(MpvPlayer.speedRange.upperBound).")
-        require(volumeStep > 0 && volumeStep <= MpvPlayer.volumeRange.upperBound, "The volume step must be more than 0 and at most \(Int(MpvPlayer.volumeRange.upperBound)).")
-        require(MpvPlayer.speedRange.contains(defaultSpeed), "The default speed must be between \(MpvPlayer.speedRange.lowerBound) and \(Int(MpvPlayer.speedRange.upperBound)).")
-        require(MpvPlayer.volumeRange.contains(defaultVolume), "The default volume must be between 0 and \(Int(MpvPlayer.volumeRange.upperBound)).")
+        require(speedStep > 0 && speedStep < PlaybackLimits.speed.upperBound, "The speed step must be more than 0 and less than \(PlaybackLimits.speed.upperBound).")
+        require(volumeStep > 0 && volumeStep <= PlaybackLimits.volume.upperBound, "The volume step must be more than 0 and at most \(Int(PlaybackLimits.volume.upperBound)).")
+        require(PlaybackLimits.speed.contains(defaultSpeed), "The default speed must be between \(PlaybackLimits.speed.lowerBound) and \(Int(PlaybackLimits.speed.upperBound)).")
+        require(PlaybackLimits.volume.contains(defaultVolume), "The default volume must be between 0 and \(Int(PlaybackLimits.volume.upperBound)).")
         return found
     }
 }

@@ -29,7 +29,11 @@ final class E2EInstallTests: XCTestCase {
         let stub = stubs.appendingPathComponent("sudo")
         try "#!/bin/sh\ntouch '\(sudoCalled.path)'\nexit 99\n".write(to: stub, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
-        addTeardownBlock { try? FileManager.default.removeItem(at: prefix) }
+        // A failed assertion must not leave the scratch app registered for evp:// with LaunchServices.
+        addTeardownBlock {
+            _ = try? self.run("uninstall.sh", in: prefix, extraPath: stubs)
+            try? FileManager.default.removeItem(at: prefix)
+        }
 
         // --prebuilt: ./test has just built the app, and a second `swift build` inside `swift test` would wait on its lock forever.
         let installed = try run("install.sh", ["--prebuilt"], in: prefix, extraPath: stubs)

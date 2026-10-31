@@ -48,6 +48,7 @@ final class IntegrationScreenshotTests: XCTestCase {
             scores.append(try psnr(shot, reference))
         }
         XCTAssertEqual(scores.firstIndex(of: scores.max()!), 1, "the screenshot should match the frame at 5 s best: \(scores)")
+        // Measured gap: 29.3 dB at 5 s against 16.3 dB at the neighbours (13 dB); 8 dB leaves room for encoder and colour drift.
         XCTAssertGreaterThan(scores[1] - max(scores[0], scores[2]), 8, "and by a wide margin over its neighbours: \(scores)")
     }
 

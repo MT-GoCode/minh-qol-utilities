@@ -30,9 +30,4 @@ final class UnitSettingsTests: XCTestCase {
         (settings.defaultSpeed, settings.defaultVolume) = (100.5, 100.5)
         XCTAssertEqual(settings.problems().count, 2)
     }
-
-    func testTheseValuesAreWhatTheEngineAccepts() {
-        XCTAssertEqual(MpvPlayer.speedRange, 0.01...100)
-        XCTAssertEqual(MpvPlayer.volumeRange, 0...100)
-    }
 }

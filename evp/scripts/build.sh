@@ -12,6 +12,6 @@ mkdir -p "$APP/Contents/MacOS"
 cp .build/release/EVP "$APP/Contents/MacOS/EVP"
 cp scripts/Info.plist "$APP/Contents/Info.plist"
 
-IDENTITY=$(bash ../signing-ladder.sh 2>/dev/null || echo "-")
-codesign --force --sign "${IDENTITY:--}" "$APP"
-echo "built + signed $APP (identity: ${IDENTITY:--})"
+IDENTITY=$(bash ../signing-ladder.sh)
+codesign --force --sign "$IDENTITY" "$APP"
+echo "built + signed $APP (identity: $IDENTITY)"

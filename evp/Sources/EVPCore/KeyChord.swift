@@ -44,8 +44,9 @@ public struct KeyChord: Hashable, Codable, CustomStringConvertible {
         49: "space", 48: "tab", 123: "left", 124: "right", 125: "down", 126: "up", 36: "return", 53: "escape", 51: "delete",
     ]
 
-    /// The chord for a key press: `characters` is what the key types without modifiers (shift only changes the case,
-    /// which the `shift` modifier already records). nil for keys that have no chord.
+    /// The chord for a key press: `characters` is what the key types without command or control (letters arrive
+    /// lowercased, the `shift` modifier records the case). A shifted symbol or digit keeps its shifted character, so
+    /// shift plus `,` is the chord `shift+<`. nil for keys that have no chord.
     public static func chord(keyCode: UInt16, characters: String, modifiers: Modifiers) -> KeyChord? {
         KeyChord(key: namedKeyCodes[keyCode] ?? characters.lowercased(), modifiers: modifiers)
     }

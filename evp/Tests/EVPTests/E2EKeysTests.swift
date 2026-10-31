@@ -46,9 +46,10 @@ final class E2EKeysTests: E2ETestCase {
         XCTAssertEqual(Double(try app!.wait(for: "volume") { Double($0) == 95 }), 95)
 
         // ctrl+space is the global pause-all hotkey, not the window's: the window must leave it alone and stay up.
+        let before = try app!.read("play-pause")
         try app!.key("ctrl+space")
-        XCTAssertEqual(try app!.read("feedback"), "Volume 95%")
-        XCTAssertEqual(try app!.read("play-pause"), "▶")
+        try key("m", expectFeedback: "Unmuted")  // keys reach the window in order, so ctrl+space has been handled by now
+        XCTAssertEqual(try app!.read("play-pause"), before)
     }
 
     /// A button with focus would activate on the space bar by itself; the keymap must take the key first so space

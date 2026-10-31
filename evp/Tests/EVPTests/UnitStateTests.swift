@@ -66,6 +66,8 @@ final class UnitStateTests: XCTestCase {
             if Date().timeIntervalSince(start) > 0.9 { existedMidStream = existedMidStream || FileManager.default.fileExists(atPath: file.path) }
         }
         XCTAssertTrue(existedMidStream, "no flush while changes kept arriving")
+        let onDisk = try XCTUnwrap(Double(try XCTUnwrap(try store(directory).state.recents.first)))
+        XCTAssertGreaterThan(onDisk, 0.9, "the file holds a late value, so it was rewritten every interval and not once")
     }
 
     func testOlderStateFilesKeepTheirDataAndGainDefaults() throws {

@@ -55,9 +55,11 @@ public struct RecentEntry: Equatable {
     /// Ten, like the Open Recent menus of macOS apps and VSCode (a decision, recorded in DECISIONS.md).
     public static let menuLimit = 10
 
-    /// The most recent first, at most `limit`, each with its remembered position.
-    public static func entries(from state: State, limit: Int = RecentEntry.menuLimit) -> [RecentEntry] {
-        state.recents.prefix(limit).map { path in
+    /// The most recent first, at most `limit`, each with its remembered position. Files that no longer exist are
+    /// skipped before the limit applies, so deleted files never crowd live ones out of the menu.
+    public static func entries(from state: State, limit: Int = RecentEntry.menuLimit,
+                               fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> [RecentEntry] {
+        state.recents.lazy.filter(fileExists).prefix(limit).map { path in
             RecentEntry(path: path, title: URL(fileURLWithPath: path).lastPathComponent,
                         position: TimeFormat.format(state.files[path]?.position ?? 0))
         }

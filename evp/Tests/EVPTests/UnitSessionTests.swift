@@ -74,7 +74,7 @@ final class UnitSessionTests: XCTestCase {
         state.recents = ["/media/lecture 3.mkv", "/media/trailer.mp4", "/media/never-played.mov"]
         state.files["/media/lecture 3.mkv"] = FileState(position: 292, speed: 1, volume: 100)
         state.files["/media/trailer.mp4"] = FileState(position: 3892, speed: 1, volume: 100)
-        let entries = RecentEntry.entries(from: state)
+        let entries = RecentEntry.entries(from: state, fileExists: { _ in true })
         XCTAssertEqual(entries.map(\.title), ["lecture 3.mkv", "trailer.mp4", "never-played.mov"])
         XCTAssertEqual(entries.map(\.position), ["4:52", "1:04:52", "0:00"])
         XCTAssertEqual(entries.map(\.path), state.recents)
@@ -83,9 +83,16 @@ final class UnitSessionTests: XCTestCase {
     func testOpenRecentShowsAtMostTen() {
         var state = State()
         state.recents = (0..<25).map { "/media/file\($0).mkv" }
-        let entries = RecentEntry.entries(from: state)
+        let entries = RecentEntry.entries(from: state, fileExists: { _ in true })
         XCTAssertEqual(entries.count, 10)
         XCTAssertEqual(entries.first?.title, "file0.mkv")
-        XCTAssertEqual(RecentEntry.entries(from: state, limit: 3).count, 3)
+        XCTAssertEqual(RecentEntry.entries(from: state, limit: 3, fileExists: { _ in true }).count, 3)
+    }
+
+    func testDeletedFilesDoNotTakeASlotInOpenRecent() {
+        var state = State()
+        state.recents = (0..<25).map { "/media/file\($0).mkv" }
+        let entries = RecentEntry.entries(from: state, fileExists: { Int($0.dropFirst("/media/file".count).prefix { $0.isNumber })! >= 20 })
+        XCTAssertEqual(entries.map(\.title), ["file20.mkv", "file21.mkv", "file22.mkv", "file23.mkv", "file24.mkv"])
     }
 }

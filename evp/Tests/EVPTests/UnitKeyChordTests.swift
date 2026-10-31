@@ -43,6 +43,7 @@ final class UnitKeyChordTests: XCTestCase {
     func testShiftOnlyChangesTheCaseNotTheChord() {
         XCTAssertEqual(chord(37, "L", .shift), "shift+l")
         XCTAssertEqual(chord(124, "", .shift), "shift+right")
+        XCTAssertEqual(chord(43, "<", .shift), "shift+<", "a shifted symbol is the shifted character")
     }
 
     func testKeysWithoutAChordAreNil() {

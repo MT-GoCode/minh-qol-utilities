@@ -65,10 +65,6 @@ public final class MpvPlayer {
         }
     }
 
-    /// mpv's documented limits for `speed`; the volume range is this app's decision (no boost above 100).
-    public static let speedRange = 0.01...100.0
-    public static let volumeRange = 0.0...100.0
-
     /// Where the player sends picture and sound. `video` draws through a render context (`attachRenderer`) and
     /// plays audio; `headless` has neither, for tests.
     public enum Output {
@@ -226,11 +222,11 @@ public final class MpvPlayer {
     /// Adds `delta`, rounded to 2 decimals so repeated 0.1 steps stay exact, and clamps to mpv's limits.
     public func adjustSpeed(by delta: Double) throws {
         let target = ((try speed() + delta) * 100).rounded() / 100
-        try setSpeed(min(max(target, Self.speedRange.lowerBound), Self.speedRange.upperBound))
+        try setSpeed(min(max(target, PlaybackLimits.speed.lowerBound), PlaybackLimits.speed.upperBound))
     }
 
     public func adjustVolume(by delta: Double) throws {
-        try setVolume(min(max(try volume() + delta, Self.volumeRange.lowerBound), Self.volumeRange.upperBound))
+        try setVolume(min(max(try volume() + delta, PlaybackLimits.volume.lowerBound), PlaybackLimits.volume.upperBound))
     }
 
     // MARK: Tracks

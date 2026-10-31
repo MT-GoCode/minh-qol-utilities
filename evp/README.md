@@ -50,7 +50,7 @@ written and tested headless against real media (`Sources/EVPCore`), and its wiri
 | `Sources/CMpv` | system-library module over Homebrew's libmpv headers (found through `pkg-config`) |
 | `Sources/EVPCore` | everything that does not touch the UI: `MpvPlayer`, `Action`, `Command`, `Keymap`, `KeyChord`, `Settings`, `StateStore`, `FileMemory`, `SessionRegistry`, `PauseAll`, `MediaKeys`, `TrackMenu`, `TimeFormat`, `PlayerLayout` |
 | `Sources/EVP` | the app (AppKit only): window, bar, time field, scrub strip |
-| `Sources/EVPStateStress` | test-only writer that the kill -9 durability test starts and kills; not part of the app build |
+| `Sources/EVPStateStress` | test-only writer that the kill -9 durability test starts and kills; `scripts/build.sh` builds only `--product EVP`, so it never reaches the app |
 | `Tests/EVPTests` | the one test suite: `Unit*`, `Integration*` (real libmpv, real media), `E2E*` (the real app) |
 | `Tools/make-fixtures` | generates the test media into `.fixtures/` |
 | `Tools/evpdrive.swift` | test driver: key presses, window list, snapshots, accessibility reads and actions; built by `./test` |

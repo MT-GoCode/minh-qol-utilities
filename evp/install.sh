@@ -34,8 +34,10 @@ if [ "${1:-}" != "--prebuilt" ]; then "$SRC/scripts/build.sh" || bad "build fail
 [ -d "$SRC/build/EVP.app" ] || bad "no build/EVP.app to install"
 
 mkdir -p "$APP_DIR" "$BINDIR"
+rm -rf "$APP_DIR/.EVP.app.new"
+cp -R "$SRC/build/EVP.app" "$APP_DIR/.EVP.app.new"
 rm -rf "$APP_DIR/EVP.app"
-cp -R "$SRC/build/EVP.app" "$APP_DIR/EVP.app"
+mv "$APP_DIR/.EVP.app.new" "$APP_DIR/EVP.app"
 install -m 0755 "$SRC/bin/evp" "$BINDIR/evp"
 "$LSREGISTER" -f "$APP_DIR/EVP.app"
 ok "$APP_DIR/EVP.app"
