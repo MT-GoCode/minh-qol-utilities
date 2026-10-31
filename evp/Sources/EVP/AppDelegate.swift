@@ -164,8 +164,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         if menu === recentMenu {
-            for entry in RecentEntry.entries(from: store.state) {
+            for (index, entry) in RecentEntry.entries(from: store.state).enumerated() {
                 let item = NSMenuItem(title: "\(entry.title)  (\(entry.position))", action: #selector(openRecent(_:)), keyEquivalent: "")
+                item.identifier = NSUserInterfaceItemIdentifier("recent-\(index)")
                 item.target = self
                 item.representedObject = entry.path
                 menu.addItem(item)
@@ -188,6 +189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let item = NSMenuItem(title: line.title, action: #selector(selectTrack(_:)), keyEquivalent: "")
                 item.target = self
                 item.state = line.isChecked ? .on : .off
+                item.identifier = NSUserInterfaceItemIdentifier("menu-\(kind.rawValue)-\(line.trackID.map(String.init) ?? "off")")
                 item.representedObject = TrackChoice(kind: kind, trackID: line.trackID, window: window)
                 menu.addItem(item)
             }

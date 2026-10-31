@@ -262,6 +262,9 @@ final class RunningApp {
         _ = try driver(["key", String(application.processIdentifier), chord, String(count)], asApp: true)
     }
 
+    /// Media keys through the system (16 play/pause, 17 next, 18 previous): they reach whichever app the system picks.
+    func media(_ codes: Int...) throws { _ = try driver(["media"] + codes.map(String.init), asApp: true) }
+
     func resize(width: Int, height: Int) throws {
         _ = try driver(["resize", String(application.processIdentifier), String(width), String(height)], asApp: true)
     }
