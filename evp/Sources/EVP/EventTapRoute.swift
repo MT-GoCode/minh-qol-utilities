@@ -2,8 +2,8 @@ import AppKit
 import ApplicationServices
 import EVPCore
 
-/// Reliable F7, F8 and F9: a session event tap sees the media keys before any other app and consumes them while a window
-/// is playing. It needs the Accessibility permission, which is asked for only when the user turns coupling on, never at
+/// Reliable F7, F8 and F9: a session event tap sees the media keys before any other app and consumes them while a video
+/// window is open, playing or paused. It needs the Accessibility permission, which is asked for only when the user turns coupling on, never at
 /// launch and never while decoupled; without it the remote-command route (`MediaKeys`) keeps working.
 final class EventTapRoute {
     enum Status: String {

@@ -25,8 +25,23 @@ final class IntegrationPreviewTests: XCTestCase {
     }
 
     func testOnlyTheLatestRequestIsDecoded() throws {
-        let got = try frames(of: "t.mp4", asking: [2, 5, 15], count: 1)
-        XCTAssertEqual(got.map(\.0), [15], "requests superseded before decoding are dropped")
+        XCTAssertEqual(try frames(of: "t.mp4", asking: [2, 5, 15], count: 1).map(\.0), [15], "requests superseded before the file loads are dropped")
+    }
+
+    func testARequestDuringADecodeReplacesTheWaitingOne() throws {
+        let preview = try FramePreview(file: try Fixtures.url("t.mp4"))
+        var got: [Double] = []
+        preview.onFrame = { seconds, _ in got.append(seconds) }
+        preview.show(1)
+        let loaded = Date().addingTimeInterval(Session.timeout)
+        while got.isEmpty, Date() < loaded { RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.02)) }
+        got = []
+        // Loaded: 2 starts decoding at once, 5 waits and is replaced by 15 before 2 finishes.
+        [2, 5, 15].forEach(preview.show)
+        let deadline = Date().addingTimeInterval(Session.timeout)
+        while got.count < 2, Date() < deadline { RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.02)) }
+        RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.5))
+        XCTAssertEqual(got, [2, 15])
     }
 
     func testDifferentTimesGiveDifferentPictures() throws {

@@ -178,8 +178,11 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
 
     private func performInterface(_ action: InterfaceAction) {
         switch action {
-        case .fullscreen: window?.toggleFullScreen(nil)
+        case .fullscreen:
+            scrubHovered(nil)  // the strip moves under the pointer without telling it the pointer left
+            window?.toggleFullScreen(nil)
         case .toggleBar:
+            scrubHovered(nil)
             content.barHidden.toggle()
             session.barToggled(id, hidden: content.barHidden)
         case .screenshot: copyScreenshot()

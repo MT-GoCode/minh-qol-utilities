@@ -9,7 +9,7 @@ import MediaPlayer
 final class MediaKeys {
     private let center = MPRemoteCommandCenter.shared()
     private let decoupled: () -> Bool
-    /// The window the keys act on: nil when no window is playing.
+    /// The window the keys act on, playing or paused: nil when no video window is open.
     private let target: () -> PlayerWindowController?
     private var commands: [MPRemoteCommand] {
         [center.togglePlayPauseCommand, center.playCommand, center.pauseCommand, center.previousTrackCommand, center.nextTrackCommand]

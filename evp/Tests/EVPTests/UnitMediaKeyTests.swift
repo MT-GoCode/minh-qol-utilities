@@ -18,7 +18,7 @@ final class UnitMediaKeyTests: XCTestCase {
         }
     }
 
-    func testTheKeyUpFollowsTheKeyDownEvenWhenNothingPlaysAnymore() {
+    func testTheKeyUpFollowsTheKeyDownEvenWhenTheVideoClosedMeanwhile() {
         var router = MediaKeyRouter()
         XCTAssertEqual(router.decide(.playPause, isKeyDown: true, decoupled: false, videoOpen: true), .consume(.playPause))
         XCTAssertEqual(router.decide(.playPause, isKeyDown: false, decoupled: false, videoOpen: false), .consume(nil), "the only video was just closed")

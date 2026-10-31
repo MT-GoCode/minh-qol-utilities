@@ -23,5 +23,7 @@ final class E2EScreenshotTests: E2ETestCase {
         XCTAssertGreaterThan(board.changeCount, before)
         let image = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(board.data(forType: .png))))
         XCTAssertEqual([image.pixelsWide, image.pixelsHigh], [1280, 720], "the frame at the video's own size")
+        let middle = try XCTUnwrap(image.colorAt(x: 640, y: 360)?.usingColorSpace(.deviceRGB))
+        XCTAssertGreaterThan(middle.redComponent + middle.greenComponent + middle.blueComponent, 0.3, "a picture, not a black frame")
     }
 }
