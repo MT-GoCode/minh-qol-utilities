@@ -1086,9 +1086,16 @@ exec "{REAL_PASEO}" "$@"
             r = run("new", "x", "--watch-claude-usage")
             check("--watch-claude-usage is rejected by argparse",
                   r.returncode == 2 and "unrecognized arguments: --watch-claude-usage" in r.stderr, r.stderr)
-            r = subprocess.run([sys.executable, SELF, "serve"], capture_output=True, text=True,
-                               env={**os.environ, "PATH": f"{T}/bin:{os.environ['PATH']}"}, timeout=20)
-            check("a second serve exits 1, already running", r.returncode == 1 and "already running" in r.stderr, r.stderr)
+            p2 = subprocess.Popen([sys.executable, SELF, "serve"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                  text=True, env={**os.environ, "PATH": f"{T}/bin:{os.environ['PATH']}"},
+                                  start_new_session=True)
+            try:
+                _, err = p2.communicate(timeout=20)
+                check("a second serve exits 1, already running", p2.returncode == 1 and "already running" in err, err)
+            except subprocess.TimeoutExpired:
+                os.killpg(p2.pid, signal.SIGKILL)
+                p2.wait()
+                check("a second serve exits 1, already running", False, "it kept running: two services at once")
             serve_stop()
             fake = "ffffffff-0000-0000-0000-000000000000"
             atomic_write(gpath(fake, "goal.json"), json.dumps({"token": "t" * 32, "goal": "g", "idle_after": 20,
@@ -1242,10 +1249,12 @@ exec "{REAL_PASEO}" "$@"
             make_dormant(aid)
             report(win(100, time.time() - 10))
             c0 = len([1 for _, c in calls() if c.startswith("usage")])
+            n_auto0 = len(events(aid, "AUTO-REVIVED"))
             time.sleep(60)
             n = len([1 for _, c in calls() if c.startswith("usage")]) - c0
             check("a past reset still at 100 % re-checks no faster than idle_after", n <= 60 // 20 + 1, n)
-            check("and the goal stays dormant", bool(state(aid).get("dormant")), state(aid))
+            check("and the goal stays dormant, never auto-revived",
+                  bool(state(aid).get("dormant")) and len(events(aid, "AUTO-REVIVED")) == n_auto0, log_lines(aid)[-4:])
             before = (state(aid).get("dormant") or {}).get("next_usage_check")
             k = len([1 for _, c in calls() if c.startswith("usage")])
             wait_for(lambda: len([1 for _, c in calls() if c.startswith("usage")]) > k, 40, 0.5)

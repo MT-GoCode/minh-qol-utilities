@@ -20,7 +20,7 @@ MUTANTS = {
     "reuse-nonce": ("lifecycle", "nonce = uuid.uuid4().hex[:12]", 'nonce = "abcdefabcdef"', "different nonce"),
     "ignore-steer-prompt": ("lifecycle", '"steer_text": a.steer_prompt or d["steer_text"]', '"steer_text": d["steer_text"]',
                             "--steer-prompt X is stored"),
-    "interrupt-not-steer": ("steer", '"--behavior", "steer", ', "", "did not interrupt"),
+    "interrupt-not-steer": ("steer", '"--behavior", "steer", ', '"--behavior", "interrupt", ', "did not interrupt"),
     "no-pending-bump": ("pending", 's["next_steer"] = max(s["next_steer"], now + g["steer_every"])', "pass",
                         "nothing was sent while it was pending"),
     "send-while-awaiting": ("dormant", '        if s["awaiting"]:\n            if busy:',

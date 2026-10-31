@@ -1,3 +1,5 @@
+# Rendered by setup-paseo-daemon.sh: @USER@ @GROUP@ @HOME@ @PASEO@ from the installing user, and the memory lines
+# as fractions of this machine's RAM (ox-dev's 4 GiB gives 2.75G / 3.25G / 512M).
 [Unit]
 Description=Paseo daemon (agent supervisor)
 After=network-online.target
@@ -5,20 +7,20 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=dev
-Group=dev
-WorkingDirectory=/home/dev
-Environment=HOME=/home/dev
-Environment=PATH=/home/dev/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/usr/bin/paseo daemon run --home /home/dev/.paseo
+User=@USER@
+Group=@GROUP@
+WorkingDirectory=@HOME@
+Environment=HOME=@HOME@
+Environment=PATH=@HOME@/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=@PASEO@ daemon run --home @HOME@/.paseo
 Restart=always
 RestartSec=5
 LimitNOFILE=65536
 
-# Container ceiling is 4 GiB; keep max+swap under it.
-MemoryHigh=2.75G
-MemoryMax=3.25G
-MemorySwapMax=512M
+# keep max+swap under the machine's RAM
+MemoryHigh=@MEMHIGH@M
+MemoryMax=@MEMMAX@M
+MemorySwapMax=@MEMSWAP@M
 # kill only the runaway agent, not the daemon
 OOMPolicy=continue
 

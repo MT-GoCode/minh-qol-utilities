@@ -4,7 +4,8 @@
 #
 #   macOS: LaunchAgent sh.paseo.daemon (RunAtLoad + KeepAlive) starting `paseo daemon run` through a login zsh;
 #          the desktop app becomes a client (manageBuiltInDaemon=false). No sudo.
-#   Linux: installs scripts/paseo.service as /etc/systemd/system/paseo.service when it differs (sudo).
+#   Linux: renders scripts/paseo.service for this user and machine and installs it as
+#          /etc/systemd/system/paseo.service when it differs (sudo).
 #
 # Idempotent: an unchanged, running setup prints "unchanged" and touches nothing. A changed one cuts every running
 # agent turn on the machine (agents and history survive). Restart later only with
@@ -16,10 +17,17 @@ bad() { printf '  \033[31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 
 if [ "$(uname -s)" != Darwin ]; then
   UNIT=/etc/systemd/system/paseo.service
-  if cmp -s "$HERE/paseo.service" "$UNIT"; then
+  export PATH="$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  PASEO="$(command -v paseo)" || bad "paseo not found — npm i -g @getpaseo/cli"
+  MEM_MIB=$(( $(awk '/^MemTotal:/{print $2}' /proc/meminfo) / 1024 ))
+  RENDERED="$(mktemp)"
+  sed -e "s#@USER@#$(id -un)#g" -e "s#@GROUP@#$(id -gn)#g" -e "s#@HOME@#$HOME#g" -e "s#@PASEO@#$PASEO#g" \
+      -e "s#@MEMHIGH@#$(( MEM_MIB * 11 / 16 ))#" -e "s#@MEMMAX@#$(( MEM_MIB * 13 / 16 ))#" \
+      -e "s#@MEMSWAP@#$(( MEM_MIB / 8 ))#" "$HERE/paseo.service" > "$RENDERED"
+  if cmp -s "$RENDERED" "$UNIT"; then rm -f "$RENDERED"
     ok "unchanged"
   else
-    sudo install -m 0644 "$HERE/paseo.service" "$UNIT"
+    sudo install -m 0644 "$RENDERED" "$UNIT"; rm -f "$RENDERED"
     sudo systemctl daemon-reload
     ok "unit updated; it takes effect at the next daemon restart (sudo systemctl restart paseo — cuts agents' turns)"
   fi
