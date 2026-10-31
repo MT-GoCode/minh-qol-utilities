@@ -76,4 +76,35 @@ final class IntegrationPauseAllTests: XCTestCase {
         try pauseAll.press(over: [first, second])
         XCTAssertEqual([first.paused, second.paused], [false, false], "the retry resumed both, nothing was forgotten")
     }
+
+    func testIfTheUserResumedEverythingByHandTheNextPressPausesAgain() throws {
+        final class Fake: Pausable {
+            var paused = false
+            func isPaused() throws -> Bool { paused }
+            func setPaused(_ value: Bool) throws { paused = value }
+        }
+        let (first, second) = (Fake(), Fake())
+        let pauseAll = PauseAll()
+        try pauseAll.press(over: [first, second])
+        first.paused = false
+        second.paused = false
+        try pauseAll.press(over: [first, second])
+        XCTAssertEqual([first.paused, second.paused], [true, true], "the key is not dead after a hand resume")
+        try pauseAll.press(over: [first, second])
+        XCTAssertEqual([first.paused, second.paused], [false, false])
+    }
+
+    func testOnlyTheRememberedVideosStillPausedAreResumed() throws {
+        final class Fake: Pausable {
+            var paused = false
+            func isPaused() throws -> Bool { paused }
+            func setPaused(_ value: Bool) throws { paused = value }
+        }
+        let (first, second) = (Fake(), Fake())
+        let pauseAll = PauseAll()
+        try pauseAll.press(over: [first, second])
+        first.paused = false
+        try pauseAll.press(over: [first, second])
+        XCTAssertEqual([first.paused, second.paused], [false, false], "second is resumed, first was already playing and stays so")
+    }
 }

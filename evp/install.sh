@@ -32,6 +32,8 @@ fi
 
 if [ "${1:-}" != "--prebuilt" ]; then "$SRC/scripts/build.sh" || bad "build failed"; fi
 [ -d "$SRC/build/EVP.app" ] || bad "no build/EVP.app to install"
+[ -z "$(find "$SRC/Sources" "$SRC/Package.swift" "$SRC/scripts/Info.plist" -newer "$SRC/build/EVP.app/Contents/MacOS/EVP" -print -quit)" ] \
+  || bad "build/EVP.app is older than the sources: run ./install.sh without --prebuilt"
 
 mkdir -p "$APP_DIR" "$BINDIR"
 rm -rf "$APP_DIR/.EVP.app.new"

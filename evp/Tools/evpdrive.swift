@@ -182,7 +182,7 @@ func snapshot(window: Int, to path: String) {
     let shot = Process()
     shot.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
     shot.arguments = ["-x", "-o", "-l", String(window), path]
-    try! shot.run()
+    do { try shot.run() } catch { fail("could not start screencapture: \(error)") }
     shot.waitUntilExit()
     if shot.terminationStatus != 0 { fail("screencapture failed for window \(window)") }
 }
