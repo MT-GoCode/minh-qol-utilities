@@ -476,6 +476,11 @@ class Service:
         now = time.time()
         pending, busy = info.pending, info.status in BUSY
         idle = not pending and not busy
+        if s["awaiting"] and s.get("awaiting_busy") and now - s["last_sent"] < g["steer_every"]:
+            # It interrupted a busy agent. Paseo then reports the agent idle before Claude has taken the message up
+            # (observed), so neither idleness nor silence means anything yet: wait for its ack, at most one interval.
+            s["next_check"] = s["last_sent"] + g["steer_every"]
+            return
         if pending:
             s["next_steer"] = max(s["next_steer"], now + g["steer_every"])   # time waiting on Minh doesn't count
         idle_after = WAITING_IDLE if waiting else g["idle_after"]
@@ -495,8 +500,8 @@ class Service:
                 s["next_check"] = now + g["idle_after"]
                 return
             if s.get("awaiting_busy"):
-                # It interrupted a busy agent, which then looks idle and silent until it takes the message up, which
-                # can take a while (observed). So it proves nothing about whether the agent can act.
+                # a whole interval passed with no ack for a message that interrupted a busy agent: that proves
+                # nothing about whether it can act, so move on without going dormant
                 log(aid, f"UNACKED {s['awaiting']} interrupted a busy agent")
                 s["awaiting"] = None
             else:
@@ -575,6 +580,8 @@ class Service:
                         s["next_check"] = now
                     else:
                         log(aid, f"ACKED {ack}")
+                        if s.get("awaiting_busy"):
+                            s["next_check"] = now     # the hold after an interrupt ends with this ack
                     s["awaiting"] = None
                 if json.dumps(s) != before:
                     atomic_write(gpath(aid, "state.json"), json.dumps(s))
