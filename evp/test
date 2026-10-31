@@ -13,6 +13,8 @@ command -v pkg-config >/dev/null || { echo "missing: pkg-config (brew install pk
 pkg-config --exists mpv 2>/dev/null || { echo "missing: libmpv (brew install mpv)"; missing=1; }
 [ "$missing" -eq 0 ] || exit 1
 Tools/make-fixtures
+RAC="${EVP_RAC:-/usr/local/bin/rac}"
+bash "$RAC" exec /usr/bin/true >/dev/null 2>&1 || { echo "missing: rac exec does not work ($RAC); E2E tests need it. Set EVP_RAC to another copy of the script."; exit 1; }
 scripts/build.sh >/dev/null || { echo "app build failed: run scripts/build.sh"; exit 1; }
 [ .build/evpdrive -nt Tools/evpdrive.swift ] || { mkdir -p .build && swiftc -O Tools/evpdrive.swift -o .build/evpdrive; }
 RUN="results/$(date +%Y%m%d-%H%M%S)-$$"

@@ -44,6 +44,11 @@ final class E2EKeysTests: E2ETestCase {
         try key("up", expectFeedback: "Volume 100%")
         try key("down", expectFeedback: "Volume 95%")
         XCTAssertEqual(Double(try app!.wait(for: "volume") { Double($0) == 95 }), 95)
+
+        // ctrl+space is the global pause-all hotkey, not the window's: the window must leave it alone and stay up.
+        try app!.key("ctrl+space")
+        XCTAssertEqual(try app!.read("feedback"), "Volume 95%")
+        XCTAssertEqual(try app!.read("play-pause"), "▶")
     }
 
     /// A held key reaches the app as a stream of key-downs; macOS drops synthetic ones flagged as repeats, so this sends

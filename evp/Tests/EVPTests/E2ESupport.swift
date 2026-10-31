@@ -7,6 +7,9 @@ enum Paths {
     static let app = root.appendingPathComponent("build/EVP.app")
     static let cli = root.appendingPathComponent("bin/evp")
     static let driver = root.appendingPathComponent(".build/evpdrive")
+    /// The `rac` command (runs the driver as the Remote Agent Connector app, which holds the GUI permissions);
+    /// EVP_RAC points at another copy of the script.
+    static let rac = ProcessInfo.processInfo.environment["EVP_RAC"] ?? "/usr/local/bin/rac"
     /// The run's results folder (set by ./test): E2E tests save their screenshots under it.
     static let results = ProcessInfo.processInfo.environment["EVP_RESULTS"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.temporaryDirectory
 }
@@ -159,9 +162,9 @@ final class RunningApp {
 
     private func driver(_ arguments: [String], asApp: Bool = false) throws -> String {
         let process = Process()
-        process.executableURL = asApp ? URL(fileURLWithPath: "/usr/local/bin/rac") : Paths.driver
+        process.executableURL = asApp ? URL(fileURLWithPath: "/bin/bash") : Paths.driver
         // `rac exec` drops the driver's stderr, so merge it into stdout there.
-        process.arguments = asApp ? ["exec", "/bin/sh", "-c", "\"$0\" \"$@\" 2>&1", Paths.driver.path] + arguments : arguments
+        process.arguments = asApp ? [Paths.rac, "exec", "/bin/sh", "-c", "\"$0\" \"$@\" 2>&1", Paths.driver.path] + arguments : arguments
         let (out, err) = (Pipe(), Pipe())
         process.standardOutput = out
         process.standardError = err
