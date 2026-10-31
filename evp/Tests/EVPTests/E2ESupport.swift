@@ -16,6 +16,8 @@ enum Paths {
 
 struct WindowInfo {
     let id: Int
+    let x: Double
+    let y: Double
     let width: Double
     let height: Double
 }
@@ -100,10 +102,10 @@ final class RunningApp {
     let application: NSRunningApplication
     private let scratch: URL
     /// The app's state folder for this run (`EVP_HOME`): a test never touches the real saved state.
-    var home: URL { scratch.appendingPathComponent("home") }
+    let home: URL
 
-    private init(_ application: NSRunningApplication, scratch: URL) {
-        (self.application, self.scratch) = (application, scratch)
+    private init(_ application: NSRunningApplication, scratch: URL, home: URL) {
+        (self.application, self.scratch, self.home) = (application, scratch, home)
     }
 
     static func running(at appURL: URL) -> NSRunningApplication? {
@@ -133,22 +135,30 @@ final class RunningApp {
         }
     }
 
-    /// Runs `bin/evp` for `arguments` against `appURL` and waits for that app to be running.
-    static func launch(_ arguments: [String], appURL: URL = Paths.app, cli: URL = Paths.cli) throws -> RunningApp {
+    /// Runs `bin/evp` for `arguments` against `appURL` and waits for that app to be running. With no arguments the app
+    /// is started on its own, as when it is opened from the Dock, to see what it restores. `home` is the state folder;
+    /// a test that quits or kills the app and starts it again passes the same one (the caller removes it).
+    static func launch(_ arguments: [String], home: URL? = nil, appURL: URL = Paths.app, cli: URL = Paths.cli) throws -> RunningApp {
         try waitForNoOtherEVP()
         let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("evp-e2e-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: scratch.appendingPathComponent("home"), withIntermediateDirectories: true)
+        let home = home ?? scratch.appendingPathComponent("home")
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         let process = Process()
-        process.executableURL = cli
         // -g: the test runs in the background and must not take focus from whoever is using the machine.
-        process.arguments = ["-g"] + arguments
-        process.environment = ["EVP_APP": appURL.path, "EVP_HOME": scratch.appendingPathComponent("home").path, "PATH": "/usr/bin:/bin"]
+        if arguments.isEmpty {
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            process.arguments = ["-g", "-a", appURL.path, "--env", "EVP_HOME=\(home.path)"]
+        } else {
+            process.executableURL = cli
+            process.arguments = ["-g"] + arguments
+        }
+        process.environment = ["EVP_APP": appURL.path, "EVP_HOME": home.path, "PATH": "/usr/bin:/bin"]
         try process.run()
         process.waitUntilExit()
         guard process.terminationStatus == 0 else { throw Failure(description: "evp exited \(process.terminationStatus)") }
         let deadline = Date().addingTimeInterval(15)
         while Date() < deadline {
-            if let application = running(at: appURL) { return RunningApp(application, scratch: scratch) }
+            if let application = running(at: appURL) { return RunningApp(application, scratch: scratch, home: home) }
             spin()
         }
         throw Failure(description: "\(appURL.lastPathComponent) never started")
@@ -160,6 +170,14 @@ final class RunningApp {
         while !application.isTerminated, Date() < deadline { Self.spin() }
         try? FileManager.default.removeItem(at: scratch)
         guard application.isTerminated else { throw Failure(description: "EVP did not quit when asked") }
+    }
+
+    /// Kills the app the way a crash or a power cut would: no quit handlers run.
+    func crash() throws {
+        kill(application.processIdentifier, SIGKILL)
+        let deadline = Date().addingTimeInterval(5)
+        while !application.isTerminated, Date() < deadline { Self.spin() }
+        guard application.isTerminated else { throw Failure(description: "EVP survived kill -9") }
     }
 
     private func driver(_ arguments: [String], asApp: Bool = false) throws -> String {
@@ -178,15 +196,18 @@ final class RunningApp {
         return output
     }
 
-    /// The player window is the largest one the app owns (the menu bar adds thin, wide ones).
-    func playerWindow() throws -> WindowInfo {
-        let windows = try driver(["windows", String(application.processIdentifier)]).split(separator: "\n").compactMap { line -> WindowInfo? in
+    /// Every player window, largest first (the menu bar adds thin, wide windows, which are left out).
+    func playerWindows() throws -> [WindowInfo] {
+        try driver(["windows", String(application.processIdentifier)]).split(separator: "\n").compactMap { line -> WindowInfo? in
             guard let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Double] else { return nil }
-            return WindowInfo(id: Int(json["id"]!), width: json["w"]!, height: json["h"]!)
+            return WindowInfo(id: Int(json["id"]!), x: json["x"]!, y: json["y"]!, width: json["w"]!, height: json["h"]!)
         }
-        guard let window = windows.max(by: { $0.width * $0.height < $1.width * $1.height }), window.height > 100 else {
-            throw Failure(description: "no player window yet")
-        }
+        .filter { $0.height > 100 }
+        .sorted { $0.width * $0.height > $1.width * $1.height }
+    }
+
+    func playerWindow() throws -> WindowInfo {
+        guard let window = try playerWindows().first else { throw Failure(description: "no player window yet") }
         return window
     }
 
