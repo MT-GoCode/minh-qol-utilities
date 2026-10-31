@@ -143,8 +143,9 @@ final class IntegrationPlayerTests: XCTestCase {
         XCTAssertEqual(try player.perform(.action(.mute), settings: settings), .done(feedback: "Muted"))
         XCTAssertEqual(try player.perform(.action(.mute), settings: settings), .done(feedback: "Unmuted"))
         XCTAssertEqual(try player.perform(.action(.playPause), settings: settings), .done(feedback: "Playing"))
-        for interfaceAction in [Action.fullscreen, .toggleBar, .screenshot, .pauseAll] {
-            XCTAssertEqual(try player.perform(.action(interfaceAction), settings: settings), .notAnEngineCommand, "\(interfaceAction)")
+        let interface: [(Action, InterfaceAction)] = [(.fullscreen, .fullscreen), (.toggleBar, .toggleBar), (.screenshot, .screenshot), (.pauseAll, .pauseAll)]
+        for (action, expected) in interface {
+            XCTAssertEqual(try player.perform(.action(action), settings: settings), .interface(expected), "\(action)")
         }
     }
 

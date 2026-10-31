@@ -71,18 +71,18 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         do {
             switch try player.perform(command, settings: settings) {
             case .done(let feedback): feedback.map(bar.showFeedback)
-            case .notAnEngineCommand: performInterface(command)
+            case .interface(let action): performInterface(action)
             }
         } catch {
             bar.showFeedback("Error: \(error)")
         }
     }
 
-    private func performInterface(_ command: Command) {
-        switch command {
-        case .action(.fullscreen): window?.toggleFullScreen(nil)
-        case .action(.toggleBar): content.barHidden.toggle()
-        case .action, .seek, .seekFraction, .setVolume: preconditionFailure("\(command) is not handled by the window")
+    private func performInterface(_ action: InterfaceAction) {
+        switch action {
+        case .fullscreen: window?.toggleFullScreen(nil)
+        case .toggleBar: content.barHidden.toggle()
+        case .screenshot, .pauseAll: bar.showFeedback("\(action) is not available yet")
         }
     }
 

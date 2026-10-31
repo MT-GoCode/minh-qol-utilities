@@ -1,9 +1,14 @@
 import Foundation
 
+/// The actions the engine hands back to the window: they act on windows or the app, not on playback.
+public enum InterfaceAction: Equatable {
+    case fullscreen, screenshot, toggleBar, pauseAll
+}
+
 extension MpvPlayer {
     public enum Outcome: Equatable {
-        /// The command was for the interface (full screen, the bar), not the engine.
-        case notAnEngineCommand
+        /// The action belongs to the interface (full screen, the bar), not the engine; the window runs it.
+        case interface(InterfaceAction)
         /// Done; `feedback` is the short text the bar shows ("+5s", "Speed 1.3x").
         case done(feedback: String?)
     }
@@ -56,8 +61,10 @@ extension MpvPlayer {
             let muted = try property("mute") != "yes"
             try toggleMute()
             return .done(feedback: muted ? "Muted" : "Unmuted")
-        case .fullscreen, .screenshot, .toggleBar, .pauseAll:
-            return .notAnEngineCommand
+        case .fullscreen: return .interface(.fullscreen)
+        case .screenshot: return .interface(.screenshot)
+        case .toggleBar: return .interface(.toggleBar)
+        case .pauseAll: return .interface(.pauseAll)
         }
     }
 

@@ -194,7 +194,7 @@ case "resize" where args.count == 4: resize(pid: pid_t(int(args[1])), width: Dou
 case "tree" where args.count == 2: tree(pid: pid_t(int(args[1])))
 case "press" where args.count == 3: press(pid: pid_t(int(args[1])), id: args[2])
 case "perform" where args.count == 4: perform(pid: pid_t(int(args[1])), id: args[2], action: args[3])
-case "setvalue" where args.count == 4: setValue(pid: pid_t(int(args[1])), id: args[2], value: Double(args[3]) ?? 0)
+case "setvalue" where args.count == 4: setValue(pid: pid_t(int(args[1])), id: args[2], value: Double(args[3]) ?? { fail("not a number: \(args[3])") }())
 case "type" where args.count == 3: typeText(pid: pid_t(int(args[1])), text: args[2])
 case "focus" where args.count == 3: focus(pid: pid_t(int(args[1])), id: args[2])
 case "read" where args.count == 3 || args.count == 4: read(pid: pid_t(int(args[1])), id: args[2], attribute: args.count == 4 ? args[3] : nil)

@@ -33,7 +33,7 @@ final class UnitTrackMenuTests: XCTestCase {
     }
 
     func testAnUnknownLanguageCodeIsShownAsItIs() {
-        XCTAssertEqual(TrackMenu.items(for: .audio, in: [track(1, .audio, language: "qaa")], locale: english).first?.title, Locale(identifier: "en_US").localizedString(forLanguageCode: "qaa") ?? "qaa")
+        XCTAssertEqual(TrackMenu.items(for: .audio, in: [track(1, .audio, language: "zzz")], locale: english).first?.title, "zzz")
     }
 
     func testAudioMenuHasNoOffLineAndAnEmptyFileHasNoLines() {

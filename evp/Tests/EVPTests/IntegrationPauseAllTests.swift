@@ -55,4 +55,25 @@ final class IntegrationPauseAllTests: XCTestCase {
         try pauseAll.press(over: [staying.player])
         XCTAssertFalse(try isPaused(staying))
     }
+
+    func testAFailedResumeKeepsTheWholeSetSoTheNextPressRetries() throws {
+        struct Refusal: Error {}
+        final class Flaky: Pausable {
+            var paused = false
+            var refuses = false
+            func isPaused() throws -> Bool { paused }
+            func setPaused(_ value: Bool) throws {
+                if refuses && !value { throw Refusal() }
+                paused = value
+            }
+        }
+        let (first, second) = (Flaky(), Flaky())
+        let pauseAll = PauseAll()
+        try pauseAll.press(over: [first, second])
+        second.refuses = true
+        XCTAssertThrowsError(try pauseAll.press(over: [first, second]))
+        second.refuses = false
+        try pauseAll.press(over: [first, second])
+        XCTAssertEqual([first.paused, second.paused], [false, false], "the retry resumed both, nothing was forgotten")
+    }
 }

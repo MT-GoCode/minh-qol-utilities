@@ -18,6 +18,11 @@ final class UnitOpenRequestTests: XCTestCase {
         XCTAssertEqual(try request("evp://open?path=%2Fa.mkv&time=1%3A04%3A52").start, 3892)
     }
 
+    func testBothFormsNormaliseThePathTheSameWay() throws {
+        XCTAssertEqual(try request("evp://open?path=%2Fa%2F..%2Fb.mkv").file.path, "/b.mkv")
+        XCTAssertEqual(try request("file:///a/../b.mkv").file.path, "/b.mkv")
+    }
+
     func testRejectsAnythingThatIsNotAWellFormedRequest() {
         let bad = [
             "https://open?path=%2Fa.mkv",       // wrong scheme
@@ -27,6 +32,7 @@ final class UnitOpenRequestTests: XCTestCase {
             "evp://open?path=%2Fa.mkv&time=abc",
             "evp://open?path=%2Fa.mkv&time=%2B30",  // an offset is not a position
             "evp://open?path=%2Fa.mkv&time=4%3A75",
+            "evp://open?path=%2Fa.mkv&time",    // a time key with no value
         ]
         for text in bad { XCTAssertThrowsError(try request(text), text) }
     }

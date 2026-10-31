@@ -11,7 +11,8 @@ extension MpvPlayer: Pausable {
 }
 
 /// The global pause key: the first press pauses every video that is playing and remembers which; the next press resumes
-/// exactly those, not videos the user paused by hand and not ones that were opened since.
+/// exactly those, not videos the user paused by hand and not ones that were opened since. A resume that throws keeps
+/// the whole set remembered, so the next press retries it.
 public final class PauseAll {
     private struct Remembered {
         weak var player: Pausable?
@@ -25,8 +26,8 @@ public final class PauseAll {
     public func press(over players: [Pausable]) throws {
         let toResume = remembered.compactMap(\.player)
         if !toResume.isEmpty {
-            remembered = []
             for player in toResume { try player.setPaused(false) }
+            remembered = []
             return
         }
         for player in players where try !player.isPaused() {

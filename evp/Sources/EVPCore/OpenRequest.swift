@@ -22,8 +22,8 @@ public struct OpenRequest: Equatable {
         guard let path = items.first(where: { $0.name == "path" })?.value, path.hasPrefix("/") else {
             throw Failure(reason: "evp://open needs an absolute path")
         }
-        file = URL(fileURLWithPath: path)
-        switch items.first(where: { $0.name == "time" })?.value.map(TimeFormat.parse) {
+        file = URL(fileURLWithPath: path).standardizedFileURL
+        switch items.first(where: { $0.name == "time" }).map({ TimeFormat.parse($0.value ?? "") }) {
         case nil: start = nil
         case .some(.absolute(let seconds)): start = seconds
         case .some: throw Failure(reason: "time must be a position such as 4:52, not an offset or text")

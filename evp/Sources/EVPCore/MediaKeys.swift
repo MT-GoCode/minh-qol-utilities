@@ -14,8 +14,9 @@ public enum MediaKey: Equatable {
     }
 }
 
-/// Whether EVP takes a media key, and what it does with it.
-public enum MediaKeyRouting {
+/// Whether EVP takes a media key, and what it does with it. It remembers the keys it took on key-down, so the matching
+/// key-up is taken too even if the decision would now differ (F8 pausing the only playing video).
+public struct MediaKeyRouter {
     public enum Decision: Equatable {
         /// Leave the key to whatever else wants it.
         case pass
@@ -23,11 +24,16 @@ public enum MediaKeyRouting {
         case consume(Action?)
     }
 
+    private var taken: Set<MediaKey> = []
+
+    public init() {}
+
     /// With decoupling on, EVP never touches the keys. With it off, EVP takes them only while something is playing, so
     /// an idle EVP does not steal the keys from the music app: F8 plays and pauses, F7 and F9 seek by the long step.
-    public static func decide(_ key: MediaKey, isKeyDown: Bool, decoupled: Bool, anythingPlaying: Bool) -> Decision {
+    public mutating func decide(_ key: MediaKey, isKeyDown: Bool, decoupled: Bool, anythingPlaying: Bool) -> Decision {
+        guard isKeyDown else { return taken.remove(key) == nil ? .pass : .consume(nil) }
         guard !decoupled, anythingPlaying else { return .pass }
-        guard isKeyDown else { return .consume(nil) }
+        taken.insert(key)
         switch key {
         case .playPause: return .consume(.playPause)
         case .previous: return .consume(.seekBackLong)

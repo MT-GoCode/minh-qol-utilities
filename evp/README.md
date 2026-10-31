@@ -70,6 +70,6 @@ tests open real windows (in the background, `evp -g`) and need `rac exec` for sc
 so they cannot run while demonlock is blocking: only the headless groups can. Requires `swift`, `pkgconf`, `mpv`
 and (tests only) `ffmpeg`, all from Homebrew; `./test` checks and says what is missing.
 
-State lives in one JSON file, `~/Library/Application Support/EVP/state.json` (`EVP_HOME` overrides the folder): per-file
+State lives in one JSON file, `~/Library/Application Support/EVP/state.json` (`EVP_HOME` will override the folder once the app reads the state): per-file
 position, speed and volume, the open windows, the recents and the settings. It is versioned, written atomically (a kill
-at any instant leaves a complete file) and a corrupt or newer file is refused, never overwritten.
+at any instant leaves a complete file; a power cut is not covered, there is no fsync) and a corrupt or newer file is refused, never overwritten.
