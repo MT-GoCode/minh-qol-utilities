@@ -1176,10 +1176,10 @@ exec "{REAL_PASEO}" "$@"
             wait_idle(aid, 120)
             tl = subprocess.run(["paseo", "logs", aid], capture_output=True, text=True).stdout
             runs = shell_runs(tl)
-            # an interrupt cuts the call (probed) and the agent may then redo it, so SLEPT alone is not proof:
-            # the call must have run exactly once and finished
-            check("the foreground call ran once and finished (SLEPT): the steer did not interrupt it",
-                  "SLEPT" in tl and runs == 1, (runs, tl[-1500:]))
+            # An interrupt does not kill the call: Claude Code moves it to the background ("[Task notification] ...")
+            # and the turn moves on (probed). A steer waits for the call, so nothing is ever backgrounded.
+            check("the foreground call ran once in the foreground and finished: the steer did not interrupt it",
+                  "SLEPT" in tl and runs == 1 and "[Task notification]" not in tl, (runs, tl[-1500:]))
             finish(aid)
 
         if want("pending"):
