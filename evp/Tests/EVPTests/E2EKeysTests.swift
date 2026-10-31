@@ -51,6 +51,19 @@ final class E2EKeysTests: E2ETestCase {
         XCTAssertEqual(try app!.read("play-pause"), "▶")
     }
 
+    /// A button with focus would activate on the space bar by itself; the keymap must take the key first so space
+    /// toggles exactly once.
+    func testSpaceTogglesOnceEvenWhenAButtonHasFocus() throws {
+        app = try RunningApp.launch([try Fixtures.url("tv.mp4").path])
+        _ = try app!.wait(for: "time") { (self.seconds($0) ?? 0) >= 1 }
+        try app!.focus("play-pause")
+        try app!.key("space")
+        XCTAssertEqual(try app!.wait(for: "play-pause") { $0 == "▶" }, "▶")
+        usleep(700_000)
+        XCTAssertEqual(try app!.read("play-pause"), "▶", "space toggled twice: once by the keymap, once by the focused button")
+        XCTAssertEqual(try app!.read("feedback"), "Paused")
+    }
+
     /// A held key reaches the app as a stream of key-downs; macOS drops synthetic ones flagged as repeats, so this sends
     /// 20 plain presses, and the rule that toggles ignore repeats is covered by `UnitKeyChordTests`.
     func testTwentyPressesInARowAllApply() throws {

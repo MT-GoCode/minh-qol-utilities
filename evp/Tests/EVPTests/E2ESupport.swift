@@ -204,6 +204,8 @@ final class RunningApp {
         }
     }
 
+    func focus(_ id: String) throws { _ = try driver(["focus", String(application.processIdentifier), id], asApp: true) }
+
     func read(_ id: String) throws -> String {
         try driver(["read", String(application.processIdentifier), id], asApp: true).trimmingCharacters(in: .whitespacesAndNewlines)
     }

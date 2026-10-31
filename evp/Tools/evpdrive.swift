@@ -3,7 +3,8 @@
 //   evpdrive windows <pid>               one JSON object per window: {"id":N,"x":..,"y":..,"w":..,"h":..}
 //   evpdrive resize <pid> <width> <height>  move the first window to the top-left, then set its frame size (needs Accessibility)
 //   evpdrive press <pid> <id>            press the button with that accessibility identifier (needs Accessibility)
-//   evpdrive read <pid> <id>             print the value, title or description of that element
+//   evpdrive focus <pid> <id>            give that element keyboard focus (needs Accessibility)
+//   evpdrive read <pid> <id> [attribute] print the value, title or description of that element, or the named attribute
 //   evpdrive tree <pid>                  print the accessibility tree (role and identifier), for debugging
 //   evpdrive snapshot <window id> <png>  window-scoped screenshot
 //   evpdrive key <pid|hid> <chord> [n]   chord like right, shift+right, j, space, ctrl+space; n presses in a row
@@ -119,9 +120,13 @@ func press(pid: pid_t, id: String) {
     guard AXUIElementPerformAction(element(pid: pid, id: id), kAXPressAction as CFString) == .success else { fail("could not press \(id)") }
 }
 
-func read(pid: pid_t, id: String) {
+func focus(pid: pid_t, id: String) {
+    guard AXUIElementSetAttributeValue(element(pid: pid, id: id), kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success else { fail("could not focus \(id)") }
+}
+
+func read(pid: pid_t, id: String, attribute: String?) {
     let target = element(pid: pid, id: id)
-    for name in [kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute] {
+    for name in attribute.map({ [$0] }) ?? [kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute] {
         var value: CFTypeRef?
         if AXUIElementCopyAttributeValue(target, name as CFString, &value) == .success, let value, !"\(value)".isEmpty { print("\(value)"); return }
     }
@@ -143,9 +148,10 @@ case "windows" where args.count == 2: listWindows(pid: pid_t(int(args[1])))
 case "resize" where args.count == 4: resize(pid: pid_t(int(args[1])), width: Double(int(args[2])), height: Double(int(args[3])))
 case "tree" where args.count == 2: tree(pid: pid_t(int(args[1])))
 case "press" where args.count == 3: press(pid: pid_t(int(args[1])), id: args[2])
-case "read" where args.count == 3: read(pid: pid_t(int(args[1])), id: args[2])
+case "focus" where args.count == 3: focus(pid: pid_t(int(args[1])), id: args[2])
+case "read" where args.count == 3 || args.count == 4: read(pid: pid_t(int(args[1])), id: args[2], attribute: args.count == 4 ? args[3] : nil)
 case "snapshot" where args.count == 3: snapshot(window: int(args[1]), to: args[2])
 case "key" where args.count >= 3: postKey(target: parseTarget(args[1]), chord: args[2], count: args.count > 3 ? int(args[3]) : 1)
 case "media" where args.count >= 2: args.dropFirst().forEach { postMedia(int($0)) }
-default: fail("usage: evpdrive windows <pid> | resize <pid> <w> <h> | press <pid> <id> | read <pid> <id> | snapshot <window id> <png> | key <pid|hid> <chord> [n] | media <code>...")
+default: fail("usage: evpdrive windows <pid> | resize <pid> <w> <h> | press <pid> <id> | focus <pid> <id> | read <pid> <id> [attribute] | snapshot <window id> <png> | key <pid|hid> <chord> [n] | media <code>...")
 }
