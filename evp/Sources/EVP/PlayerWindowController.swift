@@ -149,7 +149,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             content.barHidden.toggle()
             session.barToggled(id, hidden: content.barHidden)
         case .screenshot: copyScreenshot()
-        case .pauseAll: bar.showFeedback("\(action) is not available yet")
+        case .pauseAll: preconditionFailure("pause-all is global: the app's hotkey runs it, `handleKey` never passes it to a window")
         }
     }
 

@@ -155,6 +155,7 @@ final class RunningApp {
         try waitForNoOtherEVP()
         let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("evp-e2e-\(UUID().uuidString)")
         let home = home ?? scratch.appendingPathComponent("home")
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         let process = Process()
         // -g: the test runs in the background and must not take focus from whoever is using the machine.
@@ -187,7 +188,7 @@ final class RunningApp {
             let shot = Paths.results.appendingPathComponent("did-not-quit-\(UUID().uuidString.prefix(8)).png")
             let windows = (try? driver(["windows", String(application.processIdentifier)])) ?? "no windows listed"
             _ = try? driver(["snapshot-screen", shot.path], asApp: true)
-            for line in windows.split(separator: "\n") where line.contains(#""w":260"#) {
+            for line in windows.split(separator: "\n") where !line.contains(#""w":0.0"#) {
                 guard let id = line.split(separator: ",").first?.split(separator: ":").last else { continue }
                 _ = try? driver(["snapshot", String(id), Paths.results.appendingPathComponent("did-not-quit-window-\(id).png").path], asApp: true)
             }

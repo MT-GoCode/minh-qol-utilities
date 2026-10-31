@@ -38,7 +38,8 @@ final class E2ESettingsTests: E2ETestCase {
 
         try app!.press("title:General")
         try app!.focus("setting-seekShort")
-        try app!.key("cmd+a")
+        // A focused text field selects its whole text, so typing replaces it; type only once focus has arrived.
+        _ = try app!.wait(for: "setting-seekShort", attribute: "AXFocused") { $0 == "1" }
         try app!.type("7")
         try app!.key("return")
         XCTAssertEqual(try app!.wait(for: "setting-seekShort") { $0 == "7" }, "7")

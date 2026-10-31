@@ -81,9 +81,9 @@ final class E2ETimeTests: E2ETestCase {
     func testSettingTheStripSeeksWithoutChangingPlayState() throws {
         try startPaused()
         try app!.setValue("scrub", to: 0.5)
-        XCTAssertNotNil(try app!.wait(for: "time") { abs((self.seconds($0) ?? 0) - 10) <= 1 })
+        _ = try app!.wait(for: "time") { abs((self.seconds($0) ?? 0) - 10) <= 1 }
         try app!.setValue("scrub", to: 0.9)
-        XCTAssertNotNil(try app!.wait(for: "time") { abs((self.seconds($0) ?? 0) - 18) <= 1 })
+        _ = try app!.wait(for: "time") { abs((self.seconds($0) ?? 0) - 18) <= 1 }
         XCTAssertEqual(try app!.read("play-pause"), "▶", "scrubbing must leave the video paused")
         // The strip reports how far the video has played.
         XCTAssertEqual(Double(try app!.read("scrub")) ?? 0, 0.9, accuracy: 0.06)

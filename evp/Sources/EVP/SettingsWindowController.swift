@@ -77,6 +77,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     /// Ends any recording and gives the keyboard back to the video behind.
     func windowWillClose(_ notification: Notification) {
         window?.makeFirstResponder(nil)
+        message.stringValue = ""
         NSApp.orderedWindows.first { $0 is PlayerWindow && $0.isVisible }?.makeKey()
     }
 

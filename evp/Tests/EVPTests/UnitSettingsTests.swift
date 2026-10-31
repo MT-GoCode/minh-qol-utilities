@@ -41,4 +41,12 @@ final class UnitSettingsTests: XCTestCase {
         settings.keymap.unbind(.pauseAll)
         XCTAssertEqual(settings.problems(), [], "no global key at all is allowed")
     }
+
+    func testASpeedStepTheEngineWouldRoundAwayIsRefused() {
+        var settings = Settings()
+        settings.speedStep = 0.005
+        XCTAssertEqual(settings.problems().count, 1)
+        settings.speedStep = 0.01
+        XCTAssertEqual(settings.problems(), [])
+    }
 }

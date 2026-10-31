@@ -4,6 +4,9 @@ import EVPCore
 /// A button that shows a chord. Clicking it (or pressing it from the keyboard) waits for the next key press and reports
 /// it; Escape cancels and Delete unbinds.
 final class KeyRecorderField: NSButton {
+    private static let cancel = KeyChord(key: "escape")!
+    private static let clear = KeyChord(key: "delete")!
+
     var onChord: ((KeyChord) -> Void)?
     var onClear: (() -> Void)?
     /// Told when recording starts and stops.
@@ -47,9 +50,9 @@ final class KeyRecorderField: NSButton {
         guard recording else { return super.keyDown(with: event) }
         guard let pressed = KeyChord.chord(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers ?? "", modifiers: Modifiers(event.modifierFlags)) else { return }
         recording = false
-        switch pressed.description {
-        case "escape": break
-        case "delete": onClear?()
+        switch pressed {
+        case Self.cancel: break
+        case Self.clear: onClear?()
         default: onChord?(pressed)
         }
     }

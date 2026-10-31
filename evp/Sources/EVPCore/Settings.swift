@@ -45,7 +45,8 @@ extension Settings {
         func require(_ ok: Bool, _ message: String) { if !ok { found.append(message) } }
         require(seekShortSeconds > 0 && seekShortSeconds.isFinite, "The short seek step must be more than 0 seconds.")
         require(seekLongSeconds > 0 && seekLongSeconds.isFinite, "The long seek step must be more than 0 seconds.")
-        require(speedStep > 0 && speedStep < PlaybackLimits.speed.upperBound, "The speed step must be more than 0 and less than \(PlaybackLimits.speed.upperBound).")
+        // The engine rounds speed to hundredths, so a smaller step would never move it.
+        require(speedStep >= 0.01 && speedStep < PlaybackLimits.speed.upperBound, "The speed step must be at least 0.01 and less than \(PlaybackLimits.speed.upperBound).")
         require(volumeStep > 0 && volumeStep <= PlaybackLimits.volume.upperBound, "The volume step must be more than 0 and at most \(Int(PlaybackLimits.volume.upperBound)).")
         require(PlaybackLimits.speed.contains(defaultSpeed), "The default speed must be between \(PlaybackLimits.speed.lowerBound) and \(Int(PlaybackLimits.speed.upperBound)).")
         require(PlaybackLimits.volume.contains(defaultVolume), "The default volume must be between 0 and \(Int(PlaybackLimits.volume.upperBound)).")
