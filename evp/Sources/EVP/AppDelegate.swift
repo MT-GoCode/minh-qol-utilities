@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, Settin
     private var mediaKeys: MediaKeys!
     private var eventTap: EventTapRoute!
     private var settingsWindow: SettingsWindowController?
+    private var terminating = false
 
     private var settings: Settings { store.state.settings }
 
@@ -106,7 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, Settin
     private func show(_ request: OpenRequest, restoring: WindowState? = nil) {
         do {
             let controller = try PlayerWindowController(request, store: store, session: session, restoring: restoring)
-            controller.onClose = { [weak self] closed in self?.players.removeAll { $0 === closed } }
+            controller.onClose = { [weak self] closed in self?.videoClosed(closed) }
             controller.onPlayingChanged = { [weak self] in self?.mediaKeys.refresh() }
             players.append(controller)
             cascadePoint = controller.show(cascadingFrom: cascadePoint)
@@ -128,6 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, Settin
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        terminating = true
         session.beginTermination()
         return .terminateNow
     }
@@ -137,7 +139,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, Settin
         do { try store.flushNow() } catch { NSLog("EVP: the last state could not be saved: %@", error.localizedDescription) }
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    /// The app quits when its last video closes. Not "after the last window closed": the Open panel and Settings are
+    /// windows too, and closing one of them with no video open would quit the app under the user.
+    private func videoClosed(_ closed: PlayerWindowController) {
+        players.removeAll { $0 === closed }
+        // After the close has finished: quitting from inside `windowWillClose` would run termination mid-close.
+        if players.isEmpty && !terminating { DispatchQueue.main.async { NSApp.terminate(nil) } }
+    }
 
     // MARK: Settings
 
