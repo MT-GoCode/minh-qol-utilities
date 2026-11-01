@@ -195,6 +195,29 @@ final class CaptureTests: XCTestCase {
         }
     }
 
+    /// The path a person takes: the real catalog finds the window, the row's target goes through the real Session and source lookup, and captions come out.
+    func testAWindowFromTheCatalogAttachedThroughTheSessionGivesCaptions() async throws {
+        executionTimeAllowance = 180
+        try AppHarness.displayAwake.get()
+        try await AppHarness.muted {
+            _ = try await QuickTime.open(Fixtures.turnWav(3), self)
+            let root = temporaryRoot(self)
+            let stop = root.appending(path: "stop")
+            addTeardownBlock { try? Data().write(to: stop) }
+            let launch = Launch(root: root, steps: [["op": "session", "bundleId": "com.apple.QuickTimePlayerX"]])
+            try await launch.ready(in: root)
+            try QuickTime.play()
+            try await sleepSeconds(11.9 + captureTail)
+            try Data().write(to: stop)
+            let r = (try await launch.report.value)["results"] as! [[String: Any]]
+            let turn = try Fixtures.turns()[3], text = r[0]["text"] as! String
+            XCTAssertLessThanOrEqual(wer(ref: turn.text, hyp: text).errors, wer(ref: turn.text, hyp: try Fixtures.oracleText(3)).errors + captureExcessPerTurn, text)
+            XCTAssertEqual(r[0]["failures"] as? [String], [])
+            XCTAssertEqual(r[0]["attached"] as? [String], [String((r[0]["title"] as! String).prefix(5))], "a stop keeps the checkmark")
+            XCTAssertEqual(Set(r[0]["tags"] as! [String]), [String((r[0]["title"] as! String).prefix(5))])
+        }
+    }
+
     func testStallLimitBelowTheBufferCadenceFailsTheSourceWithTheReason() async throws {
         executionTimeAllowance = 120
         try await AppHarness.muted {

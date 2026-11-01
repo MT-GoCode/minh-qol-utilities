@@ -64,6 +64,7 @@ import XCTest
         await o.refresh().value
         XCTAssertFalse(o.captionsHidden)
         XCTAssertEqual(eye.image?.tiffRepresentation, tiff("eye"))
+        XCTAssertEqual(eye.shadow?.shadowBlurRadius, 3, "the eye must stand out over bright content like the other controls")
         XCTAssertEqual(o.hideShowItem.title, "Hide")
         eye.performClick(nil)
         await o.refresh().value

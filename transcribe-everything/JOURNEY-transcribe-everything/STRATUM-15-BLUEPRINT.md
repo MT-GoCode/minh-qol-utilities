@@ -218,3 +218,9 @@ private static let installed = Result<[String: Int], Error> {   // the transcrip
    2. Join a real Zoom meeting with at least two remote speakers. Menu ▸ Attach to Apps ▸ the Zoom window. Captions appear; each remote voice gets its own `[Speaker N]`; `tail -f ~/.transcribe-everything/transcripts/*.jsonl` shows the same lines with the same labels. The font slider and Hide/Show are in the menu and work.
    3. Menu ▸ Quit. The icon disappears and stays gone for 10 s; `launchctl print …` shows `last exit code = 0` and no pid. `./install.sh` brings it back.
    4. `./uninstall.sh` then `./install.sh`: the app returns without asking for permissions again.
+
+# Build findings (supersede the sections above)
+- The composition root in `main.swift` builds its parts inside a `Task`, and `app.run()` runs from the entry point: the blueprint's text awaited first, which kept the engine from ever starting.
+- Test 8 finds only the overlay: `MenuBarAgent` hosts status items on this macOS, so a status item has no window under the app's pid. The human gate sees the dot.
+- `install.sh` waits for the old job to be gone before bootstrapping: an immediate bootstrap failed with an I/O error on a real reinstall.
+- New `session` verify op and test: a real catalog window, attached through the real Session and source lookup, gives captions. The rigs inject a fake source, and the capture op bypasses Session, so nothing else walked this path (End-of-Period review).

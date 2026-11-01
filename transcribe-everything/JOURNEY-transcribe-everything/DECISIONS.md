@@ -161,6 +161,8 @@ Spike code: `spike/` at commit 00bbb05 (Probe = TCC-holding app probes, Bench = 
 
 ## App shell, as built (S9+)
 - **S14 measured: segments at minSilence 0.25 = 16** (14 at 0.5), 18 lines against 16: the file edit reaches a source started after it.
+- **`app.run()` runs from the plain entry point** (found by S15's real test): resumed after an `await`, top-level code is a main-queue job, and running the app inside it starves every other main-actor task, so the engine never started. A task builds the parts.
+- **`install.sh` waits for the old job to be gone** (found on a real reinstall): `launchctl bootout` returns before launchd finishes, and an immediate bootstrap fails with `5: Input/output error`, leaving no agent.
 - **Status items are hosted by `MenuBarAgent` on this macOS** (measured, S9): the app's own pid has no window in `CGWindowListCopyWindowInfo` for its status item. S15's test 8 cannot find it by owner pid; the overlay panel can still be found that way.
 
 ## Review bar (Minh)

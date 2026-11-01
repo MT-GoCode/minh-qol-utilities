@@ -2,7 +2,7 @@
 # Builds, signs with Developer ID, and installs the single app copy.
 set -euo pipefail
 cd "$(dirname "$0")"
-APP="$HOME/Applications/TranscribeEverything.app"
+. app/env.sh
 STAGE=.build-app/TranscribeEverything.app
 
 # No weaker identity: a changed signing identity resets the permission grants.

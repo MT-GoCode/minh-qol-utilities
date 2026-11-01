@@ -12,6 +12,8 @@ enum Step: Decodable {
     case transcribe(path: String)
     case capture(CaptureSpec)
     case windows
+    case permissions
+    case session(SessionSpec)
     case overlay(OverlaySpec)
 
     private enum Key: String, CodingKey { case op, path }
@@ -22,6 +24,8 @@ enum Step: Decodable {
         case "transcribe": self = .transcribe(path: try c.decode(String.self, forKey: .path))
         case "capture": self = .capture(try CaptureSpec(from: decoder))
         case "windows": self = .windows
+        case "permissions": self = .permissions
+        case "session": self = .session(try SessionSpec(from: decoder))
         case "overlay": self = .overlay(try OverlaySpec(from: decoder))
         case let op: throw DecodingError.dataCorruptedError(forKey: .op, in: c, debugDescription: "unknown op \(op)")
         }
@@ -40,6 +44,14 @@ enum Step: Decodable {
             return try await app.capture(spec)
         case .overlay(let s):
             return try await app.overlay(s)
+        case .session(let spec):
+            return try await app.session(spec)
+        case .permissions:
+            let granted = await MainActor.run {
+                let p = SystemPermissions()
+                return Dictionary(uniqueKeysWithValues: Permission.allCases.map { ($0.rawValue, p.granted($0)) })
+            }
+            return ["op": "permissions", "granted": granted]
         case .windows:
             return ["op": "windows", "windows": try JSONSerialization.jsonObject(with: JSONEncoder().encode(try await WindowCatalog.system()))]
         }

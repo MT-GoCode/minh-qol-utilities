@@ -4,7 +4,7 @@ import Foundation
 import XCTest
 import os
 
-enum HarnessError: Error { case buildFailed(Int32, log: String), stale(String), app(String), noReport, neverReady }
+enum HarnessError: Error { case buildFailed(Int32, log: String), stale(String), app(String), noReport, neverReady, agent(String) }
 
 enum AppHarness {
     static let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -24,6 +24,23 @@ enum AppHarness {
         if SHA256.hash(data: try Data(contentsOf: fresh)) != SHA256.hash(data: try Data(contentsOf: installed)) { throw HarnessError.stale(installed.path) }
     }
 
+    static let label = "com.minh.transcribe-everything"
+    static let agentPlist = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/LaunchAgents/\(label).plist")
+
+    /// Stops the LaunchAgent for `body` if it is loaded and starts it again afterwards, whether or not `body` threw.
+    /// A second copy of the app cannot run beside the agent's: both would hold the one set of permissions and the same data root.
+    static func withAgentStopped<T>(label: String, plist: URL, _ body: () throws -> T) throws -> T {
+        let domain = "gui/\(getuid())"
+        guard try sh("/bin/launchctl", ["print", "\(domain)/\(label)"]).status == 0 else { return try body() }
+        let out = try sh("/bin/launchctl", ["bootout", "\(domain)/\(label)"])
+        guard out.status == 0 else { throw HarnessError.agent("bootout \(label): \(out.out)") }
+        let result = Result { try body() }
+        while try sh("/bin/launchctl", ["print", "\(domain)/\(label)"]).status == 0 { Thread.sleep(forTimeInterval: 0.1) }  // bootout returns before launchd finishes
+        let back = try sh("/bin/launchctl", ["bootstrap", domain, plist.path])
+        guard back.status == 0 else { throw HarnessError.agent("bootstrap \(label) failed, the agent is down: \(back.out)") }
+        return try result.get()
+    }
+
     /// Launches the installed app on a scenario through LaunchServices, which makes it the permission holder, and returns the report.
     static func run(root: URL, steps: [[String: Any]]) throws -> [String: Any] {
         try ready.get()
@@ -33,11 +50,13 @@ enum AppHarness {
         let scenario = dir.appending(path: "scenario.json"), report = dir.appending(path: "scenario.report.json")
         try JSONSerialization.data(withJSONObject: ["root": root.path, "steps": steps]).write(to: scenario)
         let out = resultsDir()
-        _ = try sh("/usr/bin/open", ["-W", "-n", "--stdout", out.appending(path: "app.stdout").path, "--stderr", out.appending(path: "app.stderr").path, app.path, "--args", "verify", scenario.path])
-        guard let data = try? Data(contentsOf: report) else { throw HarnessError.noReport }
-        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
-        if let e = json["error"] as? String { throw HarnessError.app(e) }
-        return json
+        return try withAgentStopped(label: label, plist: agentPlist) {
+            _ = try sh("/usr/bin/open", ["-W", "-n", "--stdout", out.appending(path: "app.stdout").path, "--stderr", out.appending(path: "app.stderr").path, app.path, "--args", "verify", scenario.path])
+            guard let data = try? Data(contentsOf: report) else { throw HarnessError.noReport }
+            let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+            if let e = json["error"] as? String { throw HarnessError.app(e) }
+            return json
+        }
     }
 
     static var screenLocked: Bool { (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool == true }

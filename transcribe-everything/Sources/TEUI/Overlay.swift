@@ -104,6 +104,7 @@ final class Grip: NSButton { override func mouseDown(with e: NSEvent) { window!.
         eye.imagePosition = .imageOnly
         eye.symbolConfiguration = .init(pointSize: 18, weight: .semibold)
         eye.contentTintColor = .white
+        eye.shadow = Self.shadow  // text carries its shadow in its attributes; an image needs it on the view
         eye.image = Self.eyeImage(hidden: false)
         for (i, (control, id)) in [(grip as NSButton, "grip"), (expand, "expand"), (eye, "eye")].enumerated() {
             control.isBordered = false
@@ -163,11 +164,14 @@ final class Grip: NSButton { override func mouseDown(with e: NSEvent) { window!.
         panel.orderFrontRegardless()
     }
 
-    private static func styled(_ s: String, size: CGFloat) -> NSAttributedString {
+    private static var shadow: NSShadow {
         let shadow = NSShadow()
         shadow.shadowColor = .black
         shadow.shadowBlurRadius = 3
-        return NSAttributedString(string: s, attributes: [.foregroundColor: NSColor.white, .font: NSFont.systemFont(ofSize: size, weight: .semibold), .shadow: shadow])
+        return shadow
+    }
+    private static func styled(_ s: String, size: CGFloat) -> NSAttributedString {
+        NSAttributedString(string: s, attributes: [.foregroundColor: NSColor.white, .font: NSFont.systemFont(ofSize: size, weight: .semibold), .shadow: shadow])
     }
     private static func eyeImage(hidden: Bool) -> NSImage { NSImage(systemSymbolName: hidden ? "eye.slash" : "eye", accessibilityDescription: nil)! }
     @objc public func toggleCaptions() { captionsHidden.toggle() }
