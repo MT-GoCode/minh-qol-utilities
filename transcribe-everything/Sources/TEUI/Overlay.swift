@@ -15,7 +15,19 @@ public struct OverlayTime: Sendable {
 public final class OverlayPanel: NSPanel { public override var canBecomeKey: Bool { true } }
 
 /// Clicking the text takes the keyboard (copy needs it); bar controls do not (becomesKeyOnlyIfNeeded).
-public final class CaptionText: NSTextView { public override var needsPanelToBecomeKey: Bool { true } }
+public final class CaptionText: NSTextView {
+    public override var needsPanelToBecomeKey: Bool { true }
+    var pressed = false  // true exactly while a mouse press is being tracked: NSTextView.mouseDown runs its tracking loop inside the call
+    var onRelease: (() -> Void)?
+    public override func acceptsFirstMouse(for e: NSEvent?) -> Bool { true }  // the first click selects; it does not just make the panel key
+    public override func mouseDown(with e: NSEvent) {
+        pressed = true
+        super.mouseDown(with: e)
+        pressed = false
+        onRelease?()
+    }
+    public override func dragSelection(with e: NSEvent, offset: NSSize, slideBack: Bool) -> Bool { false }  // highlight and copy only
+}
 
 /// A click on the bar must act even though the panel is not key.
 class BarButton: NSButton { override func acceptsFirstMouse(for e: NSEvent?) -> Bool { true } }
@@ -47,6 +59,9 @@ final class Grip: BarButton { override func mouseDown(with e: NSEvent) { window!
     private var placed: CGFloat?, follows = true
     private var kicks: AsyncStream<Void>.Continuation!, waiters: [CheckedContinuation<Void, Never>] = []
     var expanded = false
+    private var held = false  // a data-driven text write was skipped and is owed
+    private var holding: Bool { text.pressed || text.selectedRange().length > 0 }  // a replacement would destroy the selection
+    private func releaseIfHeld() { if held && !holding { refresh() } }
 
     public init(config: ConfigStore, attached: @escaping @MainActor () -> Set<SourceID>, failures: @escaping @MainActor () -> [String] = { [] },
                 autosaveName: String = "TranscribeEverythingOverlay", time: OverlayTime = .system) {
@@ -131,6 +146,21 @@ final class Grip: BarButton { override func mouseDown(with e: NSEvent) { window!
             }
         }
         poll.tolerance = 1.0 / 240  // a quarter period: lets wakeups coalesce, keeps a flip within one display refresh
+        text.onRelease = { [weak self] in self?.releaseIfHeld() }
+        NotificationCenter.default.addObserver(forName: NSTextView.didChangeSelectionNotification, object: text, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.releaseIfHeld() }
+        }
+        NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.text.setSelectedRange(NSRange(location: 0, length: 0)) }  // fires the observer above
+        }
+        // An accessory app needs no other main menu; this hidden one exists only so ⌘C resolves.
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")  // target nil: first responder of the key window
+        let editItem = NSMenuItem()
+        editItem.submenu = edit
+        let main = NSMenu()
+        main.addItem(editItem)
+        NSApplication.shared.mainMenu = main
         precondition(panel.setFrameAutosaveName(autosaveName))  // restores a saved frame, moved back onto a screen if it is off every screen
         panel.orderFrontRegardless()
     }
@@ -200,9 +230,12 @@ final class Grip: BarButton { override func mouseDown(with e: NSEvent) { window!
         let snapshot = await store.snapshot(), config = await config.current
         let r = render(snapshot: snapshot, attached: attached(), now: time.now(), expanded: expanded, config: config)
         if scroll.frame.height > 0 { follows = scroll.contentView.bounds.maxY >= text.frame.height - 1 }  // read before the text changes; 1 pt is layout rounding
-        writeText(r, config)
+        if holding { held = true } else {
+            held = false
+            writeText(r, config)
+        }
         place()
-        if follows { text.scroll(NSPoint(x: 0, y: max(0, text.frame.height - scroll.contentView.bounds.height))) }
+        if follows, !held { text.scroll(NSPoint(x: 0, y: max(0, text.frame.height - scroll.contentView.bounds.height))) }
         expiry?.cancel()
         expiry = r.nextChange.map { next in
             // render's edge is inclusive: waking exactly at `next` would redraw the same result in a hot loop.

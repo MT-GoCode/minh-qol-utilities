@@ -58,6 +58,14 @@ final class FakeTime: @unchecked Sendable {
             UserDefaults.standard.removeObject(forKey: key)
         }
     }
+    func seed() async throws {
+        attached = [SourceID(rawValue: "A")]
+        try await say("A", "Hello there.")
+        try await say("A", "Second line.")
+        await overlay.refresh().value
+        XCTAssertEqual(overlay.text.string, "Hello there.\nSecond line.")
+    }
+    func selectThere() { overlay.text.setSelectedRange((overlay.text.string as NSString).range(of: "there")) }
     func say(_ src: String, _ text: String, tag: String = "Zoom", spk: Int = 1) async throws {
         let id = SourceID(rawValue: src)
         try await store.commit([Line(t: time.current, src: id, tag: tag, spk: spk, text: text, start: 0, end: 0)], of: id)
@@ -80,4 +88,10 @@ private func mouse(_ type: NSEvent.EventType, _ panel: NSPanel, _ p: NSPoint) ->
 @MainActor func click(_ panel: NSPanel, atWindowPoint p: NSPoint) {
     NSApp.postEvent(mouse(.leftMouseUp, panel, p), atStart: false)
     panel.sendEvent(mouse(.leftMouseDown, panel, p))
+}
+
+@MainActor func drag(_ panel: NSPanel, from: NSPoint, to: NSPoint) {
+    NSApp.postEvent(mouse(.leftMouseDragged, panel, to), atStart: false)
+    NSApp.postEvent(mouse(.leftMouseUp, panel, to), atStart: false)
+    panel.sendEvent(mouse(.leftMouseDown, panel, from))
 }
