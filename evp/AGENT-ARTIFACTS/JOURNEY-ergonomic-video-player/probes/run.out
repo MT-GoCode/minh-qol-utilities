@@ -1,0 +1,283 @@
+windowID=158957
+[cplayer] mpv v0.41.0 Copyright © 2000-2025 mpv/MPlayer/mplayer2 projects
+[cplayer] libplacebo version: v7.387.0
+[cplayer] FFmpeg version: 9.0.2
+[cplayer] FFmpeg library versions:
+[cplayer]    libavcodec      63.1.102
+[cplayer]    libavdevice     63.1.102
+[cplayer]    libavfilter     12.1.102
+[cplayer]    libavformat     63.1.102
+[cplayer]    libavutil       61.1.102
+[cplayer]    libswresample   7.1.102
+[cplayer]    libswscale      10.1.102
+[cplayer] Configuration: -Dbuildtype=release -Dsysconfdir=/opt/homebrew/etc -Dbuild-date=false -Dhtml-build=enabled -Djavascript=enabled -Dlibmpv=true -Dlua=luajit -Dlibarchive=enabled -Duchardet=enabled -Dvulkan=enabled -Dprefix=/opt/homebrew/Cellar/mpv/0.41.0_12 -Dlibdir=lib -Dwrap_mode=nofallback
+[cplayer] List of enabled features: avfoundation bsd-fstatfs cocoa coreaudio cplugins darwin ffmpeg gl gl-cocoa glob glob-posix gpl iconv javascript jpeg lcms2 libarchive libass libavdevice libbluray libdl libplacebo luajit mac-thread-name macos-10-15-4-features macos-11-3-features macos-11-features macos-12-features macos-cocoa-cb macos-media-player macos-touchbar posix posix-shm rubberband rubberband-3 swift uchardet vapoursynth vector videotoolbox-gl videotoolbox-pl vk-khr-display vulkan zimg zimg-st428 zlib
+[clipboard] Initialized mac clipboard backend.
+[libmpv_render] GL_VERSION='4.1 Metal - 91.7'
+[libmpv_render] Detected desktop OpenGL 4.1.
+[libmpv_render] GL_VENDOR='Apple'
+[libmpv_render] GL_RENDERER='Apple M4 Max'
+[libmpv_render] GL_SHADING_LANGUAGE_VERSION='4.10'
+[libmpv_render] Loaded extension GL_APPLE_rgb_422.
+[libmpv_render] GL_*_swap_control extension missing.
+[libmpv_render] Testing FBO format rgba16f
+[libmpv_render] Using FBO format rgba16f.
+[libmpv_render] Disabling HDR peak computation (one or more of the following is not supported: compute shaders=0, SSBO=0).
+[libmpv_render] Loading hwdec driver 'videotoolbox'
+[libmpv_render] Loading hwdec driver 'vulkan'
+[libmpv_render/vulkan] This is not a libplacebo vulkan gpu api context.
+render_context_create=0
+[cplayer] Running hook: auto_profiles/on_before_start_file
+[cplayer] Failed sending hook command auto_profiles/on_before_start_file. Removing hook.
+[cplayer] Running hook: auto_profiles/on_load
+[cplayer] Failed sending hook command auto_profiles/on_load. Removing hook.
+[cplayer] Running hook: ytdl_hook/on_load
+[cplayer] Running hook: ytdl_hook/on_load
+[ytdl_hook] playlist hook
+[bdmv/bluray] Opening /Users/minhtrinh/general-purpose/conversation-contexts/ergonomic-video-player/probes/media/t.mkv
+[file] Opening /Users/minhtrinh/general-purpose/conversation-contexts/ergonomic-video-player/probes/media/t.mkv
+[demux] Trying demuxers for level=normal.
+[mkv] Deferring reading cues.
+[mkv] All headers are parsed!
+[demux] Detected file format: Matroska
+[cplayer] Opening done: /Users/minhtrinh/general-purpose/conversation-contexts/ergonomic-video-player/probes/media/t.mkv
+[find_files] Loading external files in /Users/minhtrinh/general-purpose/conversation-contexts/ergonomic-video-player/probes/media/
+[cplayer] Running hook: auto_profiles/on_preloaded
+[cplayer] Failed sending hook command auto_profiles/on_preloaded. Removing hook.
+[cplayer] Running hook: ytdl_hook/on_preloaded
+[mkv] select track 0
+[mkv] select track 1
+● Video  --vid=1  (h264 1280x720 30 fps) [default]
+● Audio  --aid=1  (aac 1ch 44100 Hz) [default]
+[vd] Container reported FPS: 30.000000
+[vd] Codec list:
+[vd]     h264 - H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10
+[vd] Opening decoder h264
+[vd] No hardware decoding requested.
+[vd] Using software decoding.
+[vd] Detected 16 logical cores.
+[vd] Requesting 16 threads for decoding.
+[vd] DR failed - disabling.
+[vd] Selected decoder: h264 - H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10
+[vf] User filter list:
+[vf]   (empty)
+[ad] Codec list:
+[ad]     aac - AAC (Advanced Audio Coding)
+[ad]     aac_fixed (aac) - AAC (Advanced Audio Coding)
+[ad]     aac_at (aac) - aac (AudioToolbox)
+[ad] Opening decoder aac
+[ad] Requesting 1 threads for decoding.
+[ad] Selected decoder: aac - AAC (Advanced Audio Coding)
+[af] User filter list:
+[af]   (empty)
+[cplayer] Starting playback...
+[af] [in] 44100Hz mono 1ch floatp
+[af] [userspeed] 44100Hz mono 1ch floatp
+[af] [userspeed] (disabled)
+[af] [convert] 44100Hz mono 1ch floatp
+[vd] Using software decoding.
+[vd] Decoder format: 1280x720 yuv420p auto/auto/auto/auto/auto CL=mpeg2/4/h264 crop=1280x720+0+0 A=none
+[vd] Using container aspect ratio.
+[vf] [in] 1280x720 yuv420p bt.709/bt.709/bt.1886/limited/display CL=mpeg2/4/h264 crop=1280x720+0+0 A=none
+[vf] [userdeint] 1280x720 yuv420p bt.709/bt.709/bt.1886/limited/display CL=mpeg2/4/h264 crop=1280x720+0+0 A=none
+[vf] [userdeint] (disabled)
+[vf] [autovflip] 1280x720 yuv420p bt.709/bt.709/bt.1886/limited/display CL=mpeg2/4/h264 crop=1280x720+0+0 A=none
+[vf] [autovflip] (disabled)
+[vf] [autorotate] 1280x720 yuv420p bt.709/bt.709/bt.1886/limited/display CL=mpeg2/4/h264 crop=1280x720+0+0 A=none
+[vf] [autorotate] (disabled)
+[vf] [convert] 1280x720 yuv420p bt.709/bt.709/bt.1886/limited/display CL=mpeg2/4/h264 crop=1280x720+0+0 A=none
+[vf] [convert] (disabled)
+[vf] [out] 1280x720 yuv420p bt.709/bt.709/bt.1886/limited/display CL=mpeg2/4/h264 crop=1280x720+0+0 A=none
+[ao] Trying audio driver 'coreaudio'
+[ao/coreaudio] requested format: 44100 Hz, mono channels, floatp
+[libmpv_render] Window size: 1800x1000 (Borders: l=0 t=0 r=0 b=0)
+[libmpv_render] Video source: 0x0 (0:0)
+[libmpv_render] Video display: (0, 0) 1x1 -> (0, 499) 1800x1
+[libmpv_render] Video scale: 1800.000000/1.000000
+[libmpv_render] OSD borders: l=0 t=499 r=0 b=500
+[libmpv_render] Video borders: l=0 t=499 r=0 b=500
+[ao/coreaudio] selected audio output device: MacBook Pro Speakers (78)
+[ao/coreaudio] input channel layout:
+[ao/coreaudio] audio channel layout: tag: <0>, descriptions <2>
+[ao/coreaudio]  - description 0: label <4294967295, 64>,  flags: <0>
+[ao/coreaudio]  - description 1: label <4294967295, 64>,  flags: <0>
+[ao/coreaudio] mp chmap: unknown2
+[ao/coreaudio] input channel layout:
+[ao/coreaudio] audio channel layout: tag: <0>, descriptions <2>
+[ao/coreaudio]  - description 0: label <1, 0>,  flags: <0>
+[ao/coreaudio]  - description 1: label <2, 1>,  flags: <0>
+[ao/coreaudio] mp chmap: stereo
+[ao/coreaudio] Channel layouts:
+[ao/coreaudio]  - stereo
+[ao/coreaudio]  - mono
+[ao/coreaudio] result: mono
+[ao/coreaudio] audio channel layout: tag: <0>, descriptions <1>
+[ao/coreaudio]  - description 0: label <3, 2>,  flags: <0>
+[ao/coreaudio] unable to set the input channel layout on the audio unit ([206][255][255][255]/-50)
+[ao] Trying audio driver 'avfoundation'
+[ao/avfoundation] requested format: 44100 Hz, mono channels, floatp
+[ao/avfoundation] audio channel layout: tag: <0>, descriptions <1>
+[ao/avfoundation]  - description 0: label <3, 2>,  flags: <0>
+[ao/avfoundation] device buffer: 88200 samples.
+[ao/avfoundation] using soft-buffer of 88200 samples.
+AO: [avfoundation] 44100Hz mono 1ch float
+[cplayer] AO: Description: AVFoundation AVSampleBufferAudioRenderer
+[autoconvert] inserting resampler
+[swresample] format change, reinitializing resampler
+[swresample] 44100Hz mono floatp -> 44100Hz mono float
+[af] [out] 44100Hz mono 1ch float
+VO: [libmpv] 1280x720 yuv420p
+[cplayer] VO: Description: render API for libmpv
+[vo/libmpv] reconfig to 1280x720 yuv420p bt.709/bt.709/bt.1886/limited/display CL=mpeg2/4/h264 crop=1280x720+0+0 A=none
+[libmpv_render] Window size: 1800x1000 (Borders: l=0 t=0 r=0 b=0)
+[libmpv_render] Video source: 1280x720 (1:1)
+[libmpv_render] Video display: (0, 0) 1280x720 -> (11, 0) 1777x1000
+[libmpv_render] Video scale: 1.388281/1.388889
+[libmpv_render] OSD borders: l=11 t=0 r=12 b=0
+[libmpv_render] Video borders: l=11 t=0 r=12 b=0
+[libmpv_render] Texture for plane 0: 1280x720
+[libmpv_render] Texture for plane 1: 640x360
+[libmpv_render] Texture for plane 2: 640x360
+[libmpv_render] Testing FBO format rgba16f
+[libmpv_render] Using FBO format rgba16f.
+[cplayer] first video frame after restart shown
+[libmpv_render] Dither to 8.
+[cplayer] audio ready
+[cplayer] starting audio playback
+[cplayer] playback restart complete @ 0.000000, audio=playing, video=playing
+[osd/libass] libass API version: 0x1705000
+[osd/libass] libass source: tarball: 0.17.5
+[osd/libass] Shaper: FriBidi 1.0.16 (SIMPLE) HarfBuzz-ng 15.0.0 (COMPLEX)
+[osd/libass] Setting up fonts...
+[osd/libass] Using font provider coretext
+[osd/libass] Done.
+AV: 00:00:00 / 00:00:20 (0%) A-V:  0.000
+AV: 00:00:00 / 00:00:20 (0%) A-V:  0.018
+AV: 00:00:00 / 00:00:20 (1%) A-V:  0.000
+AV: 00:00:00 / 00:00:20 (1%) A-V:  0.014
+AV: 00:00:00 / 00:00:20 (1%) A-V:  0.000
+AV: 00:00:00 / 00:00:20 (2%) A-V:  0.033
+AV: 00:00:00 / 00:00:20 (2%) A-V:  0.000
+AV: 00:00:00 / 00:00:20 (2%) A-V:  0.042
+AV: 00:00:00 / 00:00:20 (2%) A-V:  0.009 Dropped: 1
+AV: 00:00:00 / 00:00:20 (3%) A-V:  0.000 Dropped: 1
+AV: 00:00:00 / 00:00:20 (3%) A-V:  0.041 Dropped: 1
+AV: 00:00:00 / 00:00:20 (3%) A-V:  0.008 Dropped: 2
+AV: 00:00:00 / 00:00:20 (4%) A-V:  0.000 Dropped: 2
+AV: 00:00:00 / 00:00:20 (4%) A-V:  0.035 Dropped: 2
+AV: 00:00:00 / 00:00:20 (4%) A-V:  0.002 Dropped: 3
+AV: 00:00:00 / 00:00:20 (4%) A-V:  0.000 Dropped: 3
+AV: 00:00:00 / 00:00:20 (4%) A-V:  0.034 Dropped: 3
+AV: 00:00:00 / 00:00:20 (4%) A-V:  0.004 Dropped: 4
+AV: 00:00:00 / 00:00:20 (5%) A-V:  0.000 Dropped: 4
+AV: 00:00:00 / 00:00:20 (5%) A-V:  0.042 Dropped: 4
+AV: 00:00:01 / 00:00:20 (5%) A-V:  0.009 Dropped: 5
+AV: 00:00:01 / 00:00:20 (5%) A-V:  0.000 Dropped: 5
+AV: 00:00:01 / 00:00:20 (5%) A-V:  0.039 Dropped: 5
+AV: 00:00:01 / 00:00:20 (5%) A-V:  0.007 Dropped: 6
+AV: 00:00:01 / 00:00:20 (6%) A-V:  0.000 Dropped: 6
+AV: 00:00:01 / 00:00:20 (6%) A-V:  0.039 Dropped: 6
+AV: 00:00:01 / 00:00:20 (6%) A-V:  0.006 Dropped: 7
+AV: 00:00:01 / 00:00:20 (6%) A-V:  0.000 Dropped: 7
+AV: 00:00:01 / 00:00:20 (6%) A-V:  0.041 Dropped: 7
+AV: 00:00:01 / 00:00:20 (6%) A-V:  0.008 Dropped: 8
+AV: 00:00:01 / 00:00:20 (7%) A-V:  0.000 Dropped: 8
+AV: 00:00:01 / 00:00:20 (7%) A-V:  0.017 Dropped: 8
+AV: 00:00:01 / 00:00:20 (7%) A-V:  0.000 Dropped: 8
+AV: 00:00:01 / 00:00:20 (8%) A-V:  0.000 Dropped: 8
+AV: 00:00:01 / 00:00:20 (9%) A-V:  0.030 Dropped: 8
+AV: 00:00:01 / 00:00:20 (9%) A-V:  0.000 Dropped: 8
+AV: 00:00:01 / 00:00:20 (9%) A-V:  0.036 Dropped: 8
+AV: 00:00:01 / 00:00:20 (9%) A-V:  0.004 Dropped: 9
+AV: 00:00:01 / 00:00:20 (10%) A-V:  0.000 Dropped: 9
+AV: 00:00:01 / 00:00:20 (10%) A-V:  0.038 Dropped: 9
+AV: 00:00:02 / 00:00:20 (10%) A-V:  0.005 Dropped: 10
+AV: 00:00:02 / 00:00:20 (10%) A-V:  0.000 Dropped: 10
+AV: 00:00:02 / 00:00:20 (10%) A-V:  0.042 Dropped: 10
+AV: 00:00:02 / 00:00:20 (10%) A-V:  0.009 Dropped: 11
+AV: 00:00:02 / 00:00:20 (11%) A-V:  0.000 Dropped: 11
+AV: 00:00:02 / 00:00:20 (11%) A-V:  0.038 Dropped: 11
+AV: 00:00:02 / 00:00:20 (11%) A-V:  0.005 Dropped: 12
+AV: 00:00:02 / 00:00:20 (11%) A-V:  0.000 Dropped: 12
+AV: 00:00:02 / 00:00:20 (11%) A-V:  0.042 Dropped: 12
+AV: 00:00:02 / 00:00:20 (11%) A-V:  0.009 Dropped: 13
+AV: 00:00:02 / 00:00:20 (12%) A-V:  0.000 Dropped: 13time-pos=2.367000 hwdec=no wh=1280x720 windowID=158957
+
+AV: 00:00:02 / 00:00:20 (12%) A-V:  0.011 Dropped: 13
+AV: 00:00:02 / 00:00:20 (12%) A-V:  0.000 Dropped: 13
+AV: 00:00:02 / 00:00:20 (12%) A-V:  0.037 Dropped: 13
+AV: 00:00:02 / 00:00:20 (12%) A-V:  0.004 Dropped: 14
+AV: 00:00:02 / 00:00:20 (13%) A-V:  0.000 Dropped: 14
+AV: 00:00:02 / 00:00:20 (13%) A-V:  0.029 Dropped: 14
+AV: 00:00:02 / 00:00:20 (13%) A-V:  0.000 Dropped: 14
+AV: 00:00:02 / 00:00:20 (14%) A-V:  0.017 Dropped: 14
+AV: 00:00:02 / 00:00:20 (14%) A-V:  0.000 Dropped: 14
+AV: 00:00:02 / 00:00:20 (14%) A-V:  0.035 Dropped: 14
+AV: 00:00:02 / 00:00:20 (14%) A-V:  0.003 Dropped: 15
+AV: 00:00:02 / 00:00:20 (15%) A-V:  0.000 Dropped: 15
+AV: 00:00:03 / 00:00:20 (15%) A-V:  0.000 Dropped: 15
+AV: 00:00:03 / 00:00:20 (15%) A-V:  0.022 Dropped: 15
+AV: 00:00:03 / 00:00:20 (15%) A-V:  0.000 Dropped: 15
+AV: 00:00:03 / 00:00:20 (16%) A-V:  0.000 Dropped: 15
+AV: 00:00:03 / 00:00:20 (17%) A-V:  0.000 Dropped: 15
+AV: 00:00:03 / 00:00:20 (17%) A-V:  0.014 Dropped: 15
+AV: 00:00:03 / 00:00:20 (17%) A-V:  0.000 Dropped: 15
+AV: 00:00:03 / 00:00:20 (18%) A-V:  0.000 Dropped: 15
+AV: 00:00:03 / 00:00:20 (18%) A-V:  0.041 Dropped: 15
+AV: 00:00:03 / 00:00:20 (18%) A-V:  0.008 Dropped: 16
+AV: 00:00:03 / 00:00:20 (18%) A-V:  0.000 Dropped: 16
+AV: 00:00:03 / 00:00:20 (18%) A-V:  0.018 Dropped: 16
+AV: 00:00:03 / 00:00:20 (18%) A-V:  0.000 Dropped: 16
+AV: 00:00:03 / 00:00:20 (19%) A-V:  0.000 Dropped: 16
+AV: 00:00:03 / 00:00:20 (19%) A-V:  0.010 Dropped: 16
+AV: 00:00:03 / 00:00:20 (20%) A-V:  0.000 Dropped: 16
+AV: 00:00:03 / 00:00:20 (20%) A-V:  0.038 Dropped: 16
+AV: 00:00:04 / 00:00:20 (20%) A-V:  0.005 Dropped: 17
+AV: 00:00:04 / 00:00:20 (20%) A-V:  0.000 Dropped: 17
+AV: 00:00:04 / 00:00:20 (20%) A-V:  0.039 Dropped: 17
+AV: 00:00:04 / 00:00:20 (20%) A-V:  0.007 Dropped: 18
+AV: 00:00:04 / 00:00:20 (21%) A-V:  0.000 Dropped: 18
+AV: 00:00:04 / 00:00:20 (21%) A-V:  0.038 Dropped: 18
+AV: 00:00:04 / 00:00:20 (21%) A-V:  0.005 Dropped: 19
+AV: 00:00:04 / 00:00:20 (21%) A-V:  0.000 Dropped: 19
+AV: 00:00:04 / 00:00:20 (21%) A-V:  0.034 Dropped: 19
+AV: 00:00:04 / 00:00:20 (21%) A-V:  0.002 Dropped: 20
+AV: 00:00:04 / 00:00:20 (22%) A-V:  0.000 Dropped: 20
+AV: 00:00:04 / 00:00:20 (22%) A-V:  0.042 Dropped: 20
+AV: 00:00:04 / 00:00:20 (22%) A-V:  0.009 Dropped: 21
+AV: 00:00:04 / 00:00:20 (22%) A-V:  0.000 Dropped: 21
+AV: 00:00:04 / 00:00:20 (22%) A-V:  0.009 Dropped: 21
+AV: 00:00:04 / 00:00:20 (22%) A-V:  0.000 Dropped: 21
+AV: 00:00:04 / 00:00:20 (23%) A-V:  0.035 Dropped: 21
+AV: 00:00:04 / 00:00:20 (23%) A-V:  0.002 Dropped: 22
+AV: 00:00:04 / 00:00:20 (23%) A-V:  0.000 Dropped: 22
+AV: 00:00:04 / 00:00:20 (23%) A-V:  0.020 Dropped: 22
+AV: 00:00:04 / 00:00:20 (23%) A-V:  0.000 Dropped: 22
+AV: 00:00:04 / 00:00:20 (24%) A-V:  0.000 Dropped: 22
+AV: 00:00:04 / 00:00:20 (24%) A-V:  0.029 Dropped: 22
+AV: 00:00:04 / 00:00:20 (24%) A-V:  0.000 Dropped: 22
+AV: 00:00:04 / 00:00:20 (24%) A-V:  0.013 Dropped: 22
+AV: 00:00:04 / 00:00:20 (24%) A-V:  0.000 Dropped: 22
+AV: 00:00:04 / 00:00:20 (25%) A-V:  0.000 Dropped: 22
+AV: 00:00:05 / 00:00:20 (25%) A-V:  0.000 Dropped: 22
+AV: 00:00:05 / 00:00:20 (26%) A-V:  0.000 Dropped: 22
+AV: 00:00:05 / 00:00:20 (26%) A-V:  0.035 Dropped: 22
+AV: 00:00:05 / 00:00:20 (26%) A-V:  0.001 Dropped: 23
+AV: 00:00:05 / 00:00:20 (26%) A-V:  0.000 Dropped: 23
+AV: 00:00:05 / 00:00:20 (26%) A-V:  0.002 Dropped: 23
+AV: 00:00:05 / 00:00:20 (27%) A-V:  0.000 Dropped: 23
+AV: 00:00:05 / 00:00:20 (27%) A-V:  0.038 Dropped: 23
+AV: 00:00:05 / 00:00:20 (27%) A-V:  0.005 Dropped: 24
+AV: 00:00:05 / 00:00:20 (27%) A-V:  0.000 Dropped: 24
+AV: 00:00:05 / 00:00:20 (27%) A-V:  0.041 Dropped: 24
+AV: 00:00:05 / 00:00:20 (27%) A-V:  0.009 Dropped: 25
+AV: 00:00:05 / 00:00:20 (28%) A-V:  0.000 Dropped: 25
+AV: 00:00:05 / 00:00:20 (28%) A-V:  0.041 Dropped: 25
+AV: 00:00:05 / 00:00:20 (28%) A-V:  0.008 Dropped: 26
+AV: 00:00:05 / 00:00:20 (28%) A-V:  0.000 Dropped: 26
+AV: 00:00:05 / 00:00:20 (29%) A-V:  0.034 Dropped: 26
+AV: 00:00:05 / 00:00:20 (29%) A-V:  0.001 Dropped: 27
+AV: 00:00:05 / 00:00:20 (29%) A-V:  0.000 Dropped: 27done
+-rw-r--r--@ 1 minhtrinh  staff  1509982 Oct 30 13:41 wid.png
+lavfi.signalstats.YAVG=120.382
+lavfi.signalstats.SATAVG=97.2049
