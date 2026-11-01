@@ -153,3 +153,7 @@ i never asked for the drag out feature. i just wanted to like highlight and copy
 ### S11
 
 make sure this repo is 100% decoupled from rac
+
+### S12
+
+eye hides the overlay but the three buttons there? eye is then crossed?

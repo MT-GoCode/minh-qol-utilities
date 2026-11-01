@@ -134,9 +134,9 @@ verifiable execution: in-process with an injected clock: appended lines appear e
 human-verifiable results: required gate: captions over another app and over a full-screen app, a click on empty panel area reaches the app beneath.
 
 STRATUM 12: Overlay bar — grip, expand, hide
-description: Bar above the lines: one `⠿` grip (U+283F) moves the overlay (`performDrag(with:)`, `setFrameAutosaveName`, restored frame clamped to a visible screen); `⌃` toggles windowSeconds / expandedSeconds; eye hides the overlay; menu Hide/Show toggles the same state (one owner). A source failure shows its reason in the bar until the source is re-attached.
+description: Bar above the lines: one `⠿` grip (U+283F) moves the overlay (`performDrag(with:)`, `setFrameAutosaveName`, restored frame clamped to a visible screen); `⌃` toggles windowSeconds / expandedSeconds; eye hides the captions while the bar stays, and shows crossed out while hidden; clicking it shows them again; menu Hide/Show toggles the same state (one owner). A source failure shows its reason in the bar until the source is re-attached.
   Files: Overlay.swift, MenuBar.swift, Tests/TECoreTests/BarTests.swift.
-verifiable execution: in-process: a new panel with the same autosave name restores the frame; ⌃ action shows a line older than 20 s; eye ⇒ not visible and the menu reads Show; Show ⇒ back; a `FailingSource` ⇒ its reason appears in the bar, re-attach clears it; a minute of lines at font 48 is all reachable in the scroll view.
+verifiable execution: in-process: a new panel with the same autosave name restores the frame; ⌃ action shows a line older than 20 s; eye ⇒ captions gone, bar still visible, crossed-eye glyph, and the menu reads Show; clicking it or Show ⇒ captions back, plain eye; a `FailingSource` ⇒ its reason appears in the bar, re-attach clears it; a minute of lines at font 48 is all reachable in the scroll view.
 human-verifiable results: required gate: Minh moves the overlay with the grip, expands, hides, shows, and keeps typing in his app throughout.
 
 STRATUM 13: Highlight and copy

@@ -13,7 +13,7 @@ REQUIREMENTS-VERBATIM.md.
    `[tag]` (first 5 chars of the window name) when > 1 source is attached, or when the displayed lines span > 1 source; `[Speaker N]` only when
    that source has > 1 speaker. Shows the past 20 s or the full sentence.
 4. **Overlay bar.** Grip moves the overlay around the screen; ⌃ expands to the last minute; eye hides
-   it. Text can be highlighted and copied.
+   the captions, leaving the bar with a crossed eye. Text can be highlighted and copied.
 5. **Offline store, single source of truth.** One JSONL file per engine start keyed by start time; the
    overlay renders from it; other tools read it. Menu item deletes old transcript files.
 

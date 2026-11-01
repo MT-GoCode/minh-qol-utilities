@@ -19,7 +19,7 @@ Spike code: `spike/` (Probe = TCC-holding app probes, Bench = model benches, *.p
   `[tag]` hidden when only one source is attached and the displayed lines come from it alone; `[Speaker N]` hidden unless that source has > 1 speaker.
   Shows the past 20 s or the full sentence. Renders from the offline store (single source of truth).
 - Overlay bar above the lines: **grip (⠿) moves the overlay around the screen**; **⌃ expands to the last
-  minute**; **eye icon hides** the overlay. Menu also has Hide/Show (same state).
+  minute**; **eye icon hides the captions only**: the three buttons stay and the eye shows crossed out until clicked again. Menu also has Hide/Show (same state).
 - **Transcript text is highlight-and-copy only. No drag-out of text.**
 - **Font size: a menu control that sets an integer within a range**, applied live.
 - Settings configurable on the fly.
