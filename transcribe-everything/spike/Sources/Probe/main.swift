@@ -44,6 +44,8 @@ final class WavSink {
 
 final class SCKAudio: NSObject, SCStreamOutput, SCStreamDelegate {
     var stopError: String?
+    var last: Date?
+    var maxGap = 0.0
     func stream(_ s: SCStream, didStopWithError e: Error) { stopError = "\(e)" }
     var sink: WavSink?
     let path: String
@@ -52,6 +54,9 @@ final class SCKAudio: NSObject, SCStreamOutput, SCStreamDelegate {
         guard type == .audio, let fd = sb.formatDescription else { return }
         let fmt = AVAudioFormat(cmAudioFormatDescription: fd)
         if sink == nil { sink = try! WavSink(path, fmt) }
+        let now = Date()
+        if let last { maxGap = max(maxGap, now.timeIntervalSince(last)) }
+        last = now
         try! sb.withAudioBufferList { abl, _ in
             let buf = AVAudioPCMBuffer(pcmFormat: fmt, bufferListNoCopy: abl.unsafePointer)!
             sink!.write(buf)
@@ -82,9 +87,63 @@ func sckCapture(bundleID: String, seconds: Double, path: String, rate: Int) asyn
     if out.stopError == nil { try await stream.stopCapture() }
     var r = out.sink?.summary ?? ["error": "no audio buffers delivered"]
     r["stop_error"] = out.stopError ?? "none"
+    r["max_buffer_gap_seconds"] = out.maxGap
     r["app"] = "\(app.bundleIdentifier) pid \(app.processID)"
     r["same_bundle_apps"] = content.applications.filter { $0.bundleIdentifier.hasPrefix(app.bundleIdentifier) }
         .map { "\($0.bundleIdentifier) \($0.processID)" }
+    return r
+}
+
+// Two per-app streams in one process (as the app will run them); optionally flips the default output device halfway.
+func sck2(a: String, b: String, seconds: Double, flip: Bool) async throws -> [String: Any] {
+    let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+    var streams: [(String, SCStream, SCKAudio)] = []
+    for (tag, id) in [("a", a), ("b", b)] {
+        let app = content.applications.first { $0.bundleIdentifier == id || "\($0.processID)" == id }!
+        let cfg = SCStreamConfiguration()
+        cfg.capturesAudio = true; cfg.sampleRate = 16000; cfg.channelCount = 1; cfg.width = 2; cfg.height = 2
+        cfg.minimumFrameInterval = CMTime(value: 1, timescale: 1)
+        let out = SCKAudio(path: probeDir.appendingPathComponent("sck2-\(tag).wav").path)
+        let st = SCStream(filter: SCContentFilter(display: content.displays[0], including: [app], exceptingWindows: []),
+                          configuration: cfg, delegate: out)
+        try st.addStreamOutput(out, type: .audio, sampleHandlerQueue: DispatchQueue(label: "sck2-\(tag)"))
+        try await st.startCapture()
+        streams.append((tag, st, out))
+    }
+    var flipped = "no"
+    if flip {
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var cur = AudioDeviceID(0); var n = UInt32(MemoryLayout<AudioDeviceID>.size)
+        AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &n, &cur)
+        var da = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &da, 0, nil, &size)
+        var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &da, 0, nil, &size, &ids)
+        let other = ids.first { id in
+            guard id != cur else { return false }
+            var st = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams, mScope: kAudioObjectPropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+            var z: UInt32 = 0
+            return AudioObjectGetPropertyDataSize(id, &st, 0, nil, &z) == noErr && z > 0
+        }
+        try await Task.sleep(for: .seconds(seconds / 2))
+        if var o = other {
+            flipped = "\(prop(o, kAudioObjectPropertyName, "" as CFString))"
+            AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, n, &o)
+            try await Task.sleep(for: .seconds(seconds / 4))
+            AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, n, &cur)
+        }
+        try await Task.sleep(for: .seconds(seconds / 4))
+    } else {
+        try await Task.sleep(for: .seconds(seconds))
+    }
+    var r: [String: Any] = ["flipped_to": flipped]
+    for (tag, st, out) in streams {
+        if out.stopError == nil { try await st.stopCapture() }
+        var v = out.sink?.summary ?? ["error": "no buffers"]
+        v["stop_error"] = out.stopError ?? "none"; v["max_buffer_gap_seconds"] = out.maxGap
+        r[tag] = v
+    }
     return r
 }
 
@@ -202,12 +261,20 @@ func micCapture(seconds: Double, path: String, voiceProcessing: Bool, advancedDu
     }
     let fmt = input.outputFormat(forBus: 0)
     let sink = try WavSink(path, fmt)
-    input.installTap(onBus: 0, bufferSize: 4096, format: fmt) { buf, _ in sink.write(buf) }
+    var last: Date?
+    var maxGap = 0.0
+    input.installTap(onBus: 0, bufferSize: 4096, format: fmt) { buf, _ in
+        let now = Date()
+        if let last { maxGap = max(maxGap, now.timeIntervalSince(last)) }
+        last = now
+        sink.write(buf)
+    }
     try engine.start()
     try await Task.sleep(for: .seconds(seconds))
     engine.stop()
     var s = sink.summary
     s["voice_processing"] = voiceProcessing
+    s["max_buffer_gap_seconds"] = maxGap
     var cur = AudioDeviceID(0)
     var n = UInt32(MemoryLayout<AudioDeviceID>.size)
     AudioUnitGetProperty(input.audioUnit!, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &cur, &n)
@@ -423,6 +490,7 @@ Task {
         switch cmd {
         case "status": r = status()
         case "panel": r = try await panel(seconds: Double(arg(1))!)
+        case "sck2": r = try await sck2(a: arg(1), b: arg(2), seconds: Double(arg(3))!, flip: arg(4) == "flip")
         case "decode": r = try await decode(path: arg(1))
         case "ui": r = try await ui(seconds: Double(arg(1))!)
         case "grant": r = try await grant()

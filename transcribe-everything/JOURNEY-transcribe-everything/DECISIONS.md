@@ -57,24 +57,19 @@ Spike code: `spike/` (Probe = TCC-holding app probes, Bench = model benches, *.p
 - **Live cadence**: re-decode the open segment every chunk (256 ms). A decode is ≤ 75 ms when the machine is
   otherwise idle, so 3 simultaneously speaking sources fit in one chunk and 6 saturate the Transcriber. Latency
   depends on load: 12 s decode 73 ms idle, 206 ms median at load average 26.
+- **Soak, one hour of speech's worth of live work** (`Bench soak`: 14,000 growing-prefix decodes, 7,169 embeddings, 19 min): no leak and no slowdown. Footprint 318 MB at 1,000 decodes, 332 MB by 4,000, 336 MB at 14,000; decode median 50–58 ms throughout, occasional max about 300–340 ms (so tests use measured durations, never the median); embedding about 32 ms.
 - **Latency bounds used by tests**: first provisional ≤ 0.866 s after oracle onset + that decode's measured
   duration; commit ≤ 1.28 s (4 chunks + 1 chunk VAD tail) after oracle last word end + its measured decode +
   embed + one in-flight decode (≤ measured max) + commits queued ahead (counted) × measured decode. Queue wait
   itself is never added, so starved commits go red.
 
 ## Speakers
-- **Embedder = WeSpeaker** (`DiarizerManager.extractSpeakerEmbedding`, 256-d, 31 ms median). CAM++
-  (`CampPlusEmbedder`, 192-d, 83 ms) rejected: worse separation at every segment length.
-- Tracker = per-source online running-mean centroids (cosine). Tuned on held-out speakers only
-  (test-clean 23–39; never the 20 speakers used to compare embedders).
-- **Threshold 0.35, minimum segment 2.0 s** (shorter segments inherit the previous speaker and do not
-  update centroids). 300 seeded sessions, clips cropped to 3 s: k=3 ⇒ 97.0% exact cluster count, 99.2%
-  purity; k=4 ⇒ 98.3% / 99.7%; k=6 ⇒ 92.3% / 98.9%. At 2 s: k=3 ⇒ 84.7% / 99.8%. (0.45 never merges but
-  over-splits: 79% exact at k=3.)
-- **Long sessions** (every utterance of each speaker, 134–269 segments, 40 sessions): at 0.35, final
-  cluster count is k or k+1 (max +1), exact 62–82%, purity 97.4–98.7%. Merging centroids that converge
-  was simulated and rejected: it trades the spurious extra speaker for wrong merges (purity 89–93%).
-  Known limitation: a long session can grow one spurious "Speaker N".
+- **One label per segment fails on real meetings** (AMI ES2004a, 15 min, 4 people, human labels): 74.8% of speech time sat in segments holding more than one speaker; best possible 77.6%. People reply inside minSilence; 0.25 s barely helps (71.5%). Clean LibriSpeech never showed this.
+- **Design: label words, not segments.** While speech is open, embed sliding 2 s windows at a 0.5 s hop (WeSpeaker `DiarizerManager.extractSpeakerEmbedding`, 256-d, 31 ms median; CAM++ rejected, worse and 83 ms). Each Ultra word takes the label of its nearest window. A committed segment becomes one `Line` per run of same-speaker words. Segments with no window inherit the previous speaker (first ever: Speaker 1); windows keep being emitted through the silent tail until the end event, as measured. The provisional tail takes the current label.
+- **Tracker**: per-source running-mean centroids, cosine, threshold 0.35. A new speaker needs **4 consecutive windows below threshold** (about 2 s of sustained new voice); until then they keep the previous label, so a laugh or noise cannot spawn a speaker, and a new speaker's first words stay on the previous label. The tracker lives for the engine start, keyed by `SourceID`, so detach/re-attach keeps labels. FluidAudio's `SpeakerManager` has no sustained rule and works per segment, so it is not used.
+- **Measured** (`spike/analyze_sustain.py`, per word, one-to-one Hungarian mapping, so a spurious speaker costs its words; speakers found/true, accuracy): clean conversation 3/3 94.6%; AMI 5/4 96.7%; VoxConverse 2-speaker 4/2 92.5%, 3-speaker 3/3 99.2%, 4-speaker 4/4 98.5%, 6-speaker 6/6 93.6%, 9-speaker 9/9 90.8%. Without the sustained rule: AMI 10/4, 2-speaker 16/2.
+- **LS-EEND rejected** despite shipping in FluidAudio: it looked best only on AMI, its `.ami` training corpus (4/4, 90.8%). On VoxConverse every variant fell apart: 4-speaker 60.8–68.1%, 9-speaker 35.8–58.3%, counts wrong. `.dihard3` degraded past its documented 1 h (last repeat of a 90 min run 45.6%, footprint 400 MB).
+- Known limit: some recordings can show extra speakers (2-speaker clip above: 4). Merging centroids was simulated and rejected (wrong merges, purity 89–93%).
 
 ## Capture and permissions
 - **Per-app audio = ScreenCaptureKit** (`SCContentFilter(display:including:[app])`, `capturesAudio`,
@@ -95,7 +90,10 @@ Spike code: `spike/` (Probe = TCC-holding app probes, Bench = model benches, *.p
   about 29 dB with AirPods; it follows the default input (flipping AirPods to hands-free), and selecting a device
   under it binds the speakers and records silence. Cost accepted: without headphones, an attached mic also
   transcribes speaker audio (probe: exact transcript at 50% volume). A locked session gets a silent mic.
+- **Engine start can fail** (model download, corrupt cache): grey icon, the reason in the menu, Start retries. `setup.sh` fetches the Ultra, VAD and WeSpeaker models so first launch has no surprise download.
 - A permission granted while the app runs is not assumed to apply until relaunch (a request left preflight false in that process; later processes saw true). The menu names what is missing and macOS's own Quit & Reopen, or a relaunch, picks it up.
+- **Two apps at once work in one process** (`sck2`: QuickTime and a throwaway Chrome playing different speech, two `SCStream`s): each capture held only its own speech by Ultra transcript, 14.8 s of frames each, largest gap 65 ms. Flipping the default output device mid-capture changed nothing: no error, largest gap 67 ms, transcripts continued.
+- **Stall = failure**: SCK delivers buffers continuously, including silence (largest gap 65 ms over 15 s under load), so a gap over 1 s (15× measured) means capture has stopped, whatever the cause (sleep, display change). `AppSource` fails the stream with that reason, so the source unchecks visibly instead of looking like silence. `MicSource` has the same guard (largest normal gap 107 ms). The failure reason shows in the overlay bar as well as the menu, because a menu nobody has open is not visible mid-meeting. A failed stream commits its open segment and clears its tail, like an ended one.
 - **Permissions = Microphone + Screen Recording.** App: `~/Applications/TranscribeEverything.app`,
   bundle id `com.minh.transcribe-everything`, signed `Developer ID Application: Minh Trinh (BULCQM9J2V)`,
   hardened runtime + `com.apple.security.device.audio-input`, `NSMicrophoneUsageDescription`. Grants
@@ -123,6 +121,7 @@ Spike code: `spike/` (Probe = TCC-holding app probes, Bench = model benches, *.p
   status-item menu clicks fired (3 of 3), the frontmost app stayed Paseo and the probe app stayed inactive.
 - **Grip and click-through work with the real mouse** (Minh, by hand): `performDrag(with:)` from a first-mouse grip view moved the panel; polling the mouse location each display refresh and toggling `ignoresMouseEvents` (frozen while a button is down) passed clicks on empty panel area to the app beneath while text stayed selectable.
 - The grip glyph is one `⠿` (U+283F).
+- **Overlay scrolling**: fixed width, height up to 40% of the screen, follows the newest line unless Minh has scrolled up, resumes at the bottom. Updates hold from mouse-down so a selection anchor cannot move. A restored frame is clamped to a visible screen.
 - Overlay position is AppKit window state, not a setting: `NSWindow.setFrameAutosaveName`.
 - The grey "stopped" icon is derived: Stop needs a state distinct from yellow and green.
 - Start requests only missing permissions; while any is missing the icon stays grey and the menu names it; Start
