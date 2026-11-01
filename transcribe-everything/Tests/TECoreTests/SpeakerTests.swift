@@ -54,9 +54,7 @@ final class SpeakerTests: XCTestCase {
         let found = Set(lines.map(\.spk)).count
         let accuracy = speakerAccuracy(lines, midpoints: words.map { ($0.startTime + $0.endTime) / 2 }, truth: ref)
         let row = "| \(name) | \(found) | \(String(format: "%.1f%%", accuracy * 100)) | \(words.count) | \(Int(bound * 100))% |\n"
-        let report = resultsDir().appending(path: "speakers.md")
-        let old = (try? String(contentsOf: report, encoding: .utf8)) ?? "| clip | speakers found | word accuracy | words | bound |\n|---|---|---|---|---|\n"
-        try (old + row).write(to: report, atomically: true, encoding: .utf8)
+        try row.write(to: resultsDir().appending(path: "speakers-\(name).md"), atomically: true, encoding: .utf8)  // one file per clip: these tests run in parallel
         XCTAssertTrue(ok(found), "found \(found)")
         XCTAssertGreaterThanOrEqual(accuracy, bound)
     }

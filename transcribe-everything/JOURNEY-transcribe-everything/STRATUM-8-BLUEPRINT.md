@@ -220,3 +220,11 @@ printf '{"root":"%s","steps":[{"op":"capture","sources":[{"id":"mic","kind":"mic
 
 ## Not in S8
 Menu, `Microphone` checkmark, failure display (S9–S12); device-change policy beyond "restart on notification, look up the built-in again each time".
+
+# Build findings (supersede the sections above)
+- Selecting the device posts a configuration change before audio flows, so restarting on every notification looped forever. `restart()` acts only after the current capture delivered a buffer. `AVAudioEngine.isRunning` cannot decide this: it stays true after a real rate change. New in-process test: a notification before the first buffer does not restart.
+- Real test 7 stays as blueprinted (posts the notification). Traced: flipping the mic's nominal rate posts no notification; audio stops and the stall guard ends the source with its reason.
+- Real-mic tests 6 and 7 skip with the reason when the screen is locked. Test 8 runs locked: ducking does not depend on what the mic hears.
+- Test 8 bounds both comparisons at 3%: identical runs measured 1.14% apart, voice processing 54%.
+- A restart cancels the stall watcher and starts a new one from the new capture: at load 20 a real restart exceeded 1 s.
+- Human gate pending: Minh's AirPods, lid and sleep checks.

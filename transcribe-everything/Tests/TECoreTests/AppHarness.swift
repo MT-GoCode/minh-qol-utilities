@@ -1,3 +1,4 @@
+import CoreGraphics
 import CryptoKit
 import Foundation
 import XCTest
@@ -38,6 +39,8 @@ enum AppHarness {
         if let e = json["error"] as? String { throw HarnessError.app(e) }
         return json
     }
+
+    static var screenLocked: Bool { (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool == true }
 
     /// Once per test process: SCK lists no display while the display sleeps. The assertion ends with this process.
     static let displayAwake = Result<Void, Error> {

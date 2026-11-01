@@ -60,7 +60,8 @@ struct Report: Decodable {
     struct Ended: Decodable { let id: String; let error: String? }
     struct Src: Decodable { let file: String; let arrivals: [Arrival] }
     struct Shown: Decodable { let t: Date; let lines: [String: Int]; let tails: [String] }
-    let ended: [Ended]; let sources: [String: Src]; let decodes: [Decode]; let shown: [Shown]; let lines: [Line]
+    struct MicInfo: Decodable { let restarts: Int; let device: BoundDevice?; let defaultInput: String? }
+    let ended: [Ended]; let sources: [String: Src]; let decodes: [Decode]; let shown: [Shown]; let lines: [Line]; let mic: MicInfo?
 }
 struct Captured {
     let report: Report, samples: [String: [Float]], transcript: URL
@@ -71,6 +72,7 @@ struct Captured {
     }
 }
 
+let micSource: [String: Any] = ["id": "mic", "kind": "mic"]
 func appSource(_ id: String, _ tag: String, _ pid: Int) -> [String: Any] { ["id": id, "kind": "app", "tag": tag, "pid": pid] }
 
 /// One launch of the app's `capture` op. `during` runs once every source delivers; `stop` is written when it returns.
