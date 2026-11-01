@@ -125,13 +125,20 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             if preview == nil {
                 let made = try FramePreview(file: URL(fileURLWithPath: path))
                 made.onFrame = { [weak self] _, jpeg in self?.thumbnailReady(jpeg) }
-                made.onError = { [weak self] in self?.bar.showFeedback("Preview: \($0.localizedDescription)") }
+                made.onError = { [weak self] in self?.previewFailed($0) }
                 preview = made
             }
             preview?.show(hover.fraction * duration)
         } catch {
             bar.showFeedback("Preview: \(error.localizedDescription)")
         }
+    }
+
+    /// Dropping the preview makes the next hover try again and report again, instead of waiting on a dead player.
+    private func previewFailed(_ error: Error) {
+        preview = nil
+        bubble.hide()
+        bar.showFeedback("Preview: \(error.localizedDescription)")
     }
 
     private func thumbnailReady(_ jpeg: Data) {

@@ -31,7 +31,7 @@ public final class MpvPlayer {
     public enum Event: Equatable {
         case fileLoaded
         case loadFailed(MpvError)
-        /// Playback (re)started: a seek has landed.
+        /// The first frame of a load, or of a seek that has landed, is ready.
         case playbackRestart
         case time(Double)
         case duration(Double)

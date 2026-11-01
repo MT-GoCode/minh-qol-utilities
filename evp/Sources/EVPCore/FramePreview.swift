@@ -6,7 +6,7 @@ import Foundation
 public final class FramePreview {
     private let player: MpvPlayer
     private let file: URL
-    private var loaded = false
+    private var ready = false
     private var decoding: Double?
     private var wanted: Double?
 
@@ -30,7 +30,7 @@ public final class FramePreview {
     }
 
     private func next() {
-        guard loaded, decoding == nil, let seconds = wanted else { return }
+        guard ready, decoding == nil, let seconds = wanted else { return }
         wanted = nil
         decoding = seconds
         do { try player.seek(keyframeNear: seconds) } catch { finish(.failure(error)) }
@@ -40,8 +40,8 @@ public final class FramePreview {
         switch event {
         // Ready on the load's own restart, not on file-loaded: a seek sent before that restart would take it as its
         // answer, and every later thumbnail would show the frame of the request before.
-        case .playbackRestart where !loaded:
-            loaded = true
+        case .playbackRestart where !ready:
+            ready = true
             next()
         case .playbackRestart where decoding != nil:
             finish(Result { try player.screenshot(to: file); return try Data(contentsOf: file) })
