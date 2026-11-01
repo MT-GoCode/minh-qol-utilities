@@ -9,7 +9,7 @@ final class CaptureTests: XCTestCase {
     private func text(_ lines: [Line]) -> String { lines.map(\.text).joined(separator: " ") }
 
     func testBeatsCloserThanTheLimitNeverStall() async throws {
-        try requireIdleMachine()
+        try waitForIdleMachine()
         let g = StallGuard(limit: .seconds(0.5))
         let w = Task { try await g.watch() }
         for _ in 0..<8 {
@@ -53,7 +53,7 @@ final class CaptureTests: XCTestCase {
 
     func testQuickTimeConversationMatchesOracleThreeSpeakersAndLatency() async throws {
         executionTimeAllowance = 300
-        try requireIdleMachine()
+        try waitForIdleMachine()
         try await AppHarness.muted {
             let tr = try await Models.transcriber.value
             let conv = try await samples(Fixtures.conversationWav)
@@ -121,7 +121,7 @@ final class CaptureTests: XCTestCase {
 
     func testTenSecondPauseKeepsBoundariesAndTheClockOnWallTime() async throws {
         executionTimeAllowance = 180
-        try requireIdleMachine()
+        try waitForIdleMachine()
         try await AppHarness.muted {
             let pid = try await QuickTime.open(Fixtures.turnWav(3), self)
             let cap = try await runCapture(self, [appSource("qt", "QuickTime", pid)]) {
@@ -145,7 +145,7 @@ final class CaptureTests: XCTestCase {
 
     func testQuittingQuickTimeEndsTheSourceWithItsLastLineCommitted() async throws {
         executionTimeAllowance = 120
-        try requireIdleMachine()
+        try waitForIdleMachine()
         try await AppHarness.muted {
             let pid = try await QuickTime.open(Fixtures.conversationWav, self)
             let cap = try await runCapture(self, [appSource("qt", "QuickTime", pid)]) {
@@ -166,7 +166,7 @@ final class CaptureTests: XCTestCase {
 
     func testQuickTimeAndChromeTogetherKeepOnlyTheirOwnSpeech() async throws {
         executionTimeAllowance = 300
-        try requireIdleMachine()
+        try waitForIdleMachine()
         try await AppHarness.muted {
             let tr = try await Models.transcriber.value
             let cont = try await samples(Fixtures.continuousWav), conv = try await samples(Fixtures.conversationWav)

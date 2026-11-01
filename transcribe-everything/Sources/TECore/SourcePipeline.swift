@@ -76,6 +76,7 @@ struct SourcePipeline: Sendable {
             try await commit(o, base + samples.count)
         }
 
+        let failure: Error?
         do {
             for try await c in chunks {
                 precondition(c.index == base + samples.count, "source chunks must be contiguous")
@@ -122,14 +123,15 @@ struct SourcePipeline: Sendable {
                     base += drop
                 }
             }
+            try await flush()
+            failure = nil
         } catch {
-            try? await flush()
-            offer.finish()
-            _ = await live.result
-            throw error
+            try? await flush()  // a failed source still commits its open segment
+            failure = error
         }
-        try await flush()
         offer.finish()
-        try await live.value
+        let tails = await live.result
+        if let failure { throw failure }
+        try tails.get()
     }
 }

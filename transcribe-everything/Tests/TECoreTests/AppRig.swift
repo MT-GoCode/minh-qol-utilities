@@ -38,6 +38,11 @@ actor Gate {
     var made: [SourceID: Int] = [:], gone: Set<SourceID> = [], provide: [SourceID: any TECore.AudioSource] = [:]
 }
 
+@MainActor final class FakeWindows {
+    var list: [WindowCatalog.Window] = []
+    var fetches = 0
+}
+
 /// Reads the drawn image, sharing nothing with `MenuBar`.
 func dotColor(_ image: NSImage) -> String {
     let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 16, pixelsHigh: 16, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
@@ -55,10 +60,11 @@ func dotColor(_ image: NSImage) -> String {
 
 @MainActor final class Rig {
     let root: URL, c = Counters(), permissions: FakePermissions, config = ConfigStore()
-    private(set) var session: Session!, bar: MenuBar!
+    private(set) var session: Session!, bar: MenuBar!, catalog: WindowCatalog!
+    let windows = FakeWindows()
     var history: [String] = []  // "<state>/<dot colour>" after each change that alters it
 
-    init(_ test: XCTestCase, have: Set<Permission> = Set(Permission.allCases), grants: Set<Permission> = [], gate: Gate? = nil, loadFailures: Int = 0) {
+    init(_ test: XCTestCase, have: Set<Permission> = Set(Permission.allCases), grants: Set<Permission> = [], gate: Gate? = nil, loadFailures: Int = 0, every: TimeInterval = 3600, settings: [NSMenuItem] = []) {
         root = temporaryRoot(test)
         permissions = FakePermissions(have: have, grantsOnRequest: grants)
         c.loadFailures = loadFailures
@@ -77,7 +83,11 @@ func dotColor(_ image: NSImage) -> String {
             if let s = c.provide[t.id] { return s }
             return try FileSource(url: Fixtures.conversationWav, id: t.id, tag: t.tag, clock: ContinuousClock())  // 99 s real time: it cannot end inside a test
         }, onStart: { _ in }, terminate: { c.terminated = true })
-        bar = MenuBar(session: session)
+        catalog = WindowCatalog(permissions: permissions, every: every) { [windows] in
+            windows.fetches += 1
+            return windows.list
+        }
+        bar = MenuBar(session: session, catalog: catalog, settings: settings)
         session.observe { [unowned self] in
             let now = self.label + "/" + self.dot
             if self.history.last != now { self.history.append(now) }
@@ -92,6 +102,7 @@ func dotColor(_ image: NSImage) -> String {
         case .failed: "failed"
         }
     }
+    func submenu() -> NSMenu { bar.item.menu!.item(withTitle: "Attach to Apps")!.submenu! }
     func click(_ title: String) {
         let menu = bar.item.menu!, i = menu.indexOfItem(withTitle: title)
         XCTAssertNotEqual(i, -1, title)

@@ -49,10 +49,12 @@ public final class MicSource: AudioSource {
     private let state = OSAllocatedUnfairLock(initialState: State())
     private let control = DispatchQueue(label: "mic.control")  // serial: every start and stop of capture runs here, never under `state`, because engine.stop waits for a tap callback that takes it
     private let stall = StallGuard()
-    private let start: Start
+    private let start: Start, grace: Duration
 
-    public init(id: SourceID, start: @escaping Start = MicSource.engineStart) {
+    /// `grace` before the stall guard counts: a first start on a busy Mac can take over a second to deliver. A decision, far above the 0.1 s measured on restarts at load 26.
+    public init(id: SourceID, grace: Duration = .seconds(5), start: @escaping Start = MicSource.engineStart) {
         self.id = id
+        self.grace = grace
         self.start = start
     }
 
@@ -86,7 +88,11 @@ public final class MicSource: AudioSource {
 
     private func watchForStall() -> Task<Void, Never> {
         Task { [self] in
-            do { try await stall.watch() } catch { control.async { self.end(error) } }
+            do {
+                try await Task.sleep(for: grace)
+                try await stall.watch()
+            } catch is CancellationError {
+            } catch { control.async { self.end(error) } }
         }
     }
 
@@ -94,7 +100,7 @@ public final class MicSource: AudioSource {
     private func restart() {
         // Selecting the device also notifies, before audio flows, and restarting on that would loop forever.
         guard let old = state.withLock({ $0.continuation == nil || !$0.delivering ? nil : $0.capture }) else { return }
-        state.withLock { $0.watcher }?.cancel()  // a slow restart is not a stall: the guard counts again from the new capture
+        state.withLock { $0.watcher }?.cancel()  // a slow restart is not a stall: the guard starts again from the new capture
         old.stop()
         do {
             let capture = try start { [self] in deliver($0) }

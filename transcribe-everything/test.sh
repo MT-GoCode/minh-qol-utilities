@@ -3,6 +3,7 @@
 # Timed and capture tests run alone: they measure wall clock or own the Mac's output, QuickTime and app install. The rest run together.
 set -uo pipefail
 cd "$(dirname "$0")"
+caffeinate -i -w $$ &  # an idle sleep mid-run would fail the timed tests for nothing
 out="$PWD/test-results/$(date +%Y%m%d-%H%M%S)"; mkdir -p "$out"
 timed='AppTests|CaptureTests|LiveTests|MicTests'
 # --filter arguments are alternatives, so the timed pass needs one pattern for "timed and matching".

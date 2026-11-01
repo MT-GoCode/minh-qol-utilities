@@ -11,6 +11,7 @@ struct Scenario: Decodable {
 enum Step: Decodable {
     case transcribe(path: String)
     case capture(CaptureSpec)
+    case windows
 
     private enum Key: String, CodingKey { case op, path }
 
@@ -19,6 +20,7 @@ enum Step: Decodable {
         switch try c.decode(String.self, forKey: .op) {
         case "transcribe": self = .transcribe(path: try c.decode(String.self, forKey: .path))
         case "capture": self = .capture(try CaptureSpec(from: decoder))
+        case "windows": self = .windows
         case let op: throw DecodingError.dataCorruptedError(forKey: .op, in: c, debugDescription: "unknown op \(op)")
         }
     }
@@ -34,6 +36,8 @@ enum Step: Decodable {
             return ["op": "transcribe", "path": path, "text": text, "seconds": Double(d.seconds) + Double(d.attoseconds) * 1e-18]
         case .capture(let spec):
             return try await app.capture(spec)
+        case .windows:
+            return ["op": "windows", "windows": try JSONSerialization.jsonObject(with: JSONEncoder().encode(try await WindowCatalog.system()))]
         }
     }
 }

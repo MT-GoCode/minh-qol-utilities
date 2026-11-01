@@ -47,6 +47,15 @@ public actor TranscriptStore {
         return e
     }()
 
+    /// Removes every session file under the root except `current`'s; with no current engine start, all of them. Foreign files stay.
+    public static func deleteOld(in paths: Paths, except current: URL?) throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: paths.transcripts, withIntermediateDirectories: true)
+        // Names, not URLs: /var and /private/var spell one file two ways.
+        for f in try fm.contentsOfDirectory(at: paths.transcripts, includingPropertiesForKeys: nil)
+        where f.pathExtension == "jsonl" && f.lastPathComponent != current?.lastPathComponent { try fm.removeItem(at: f) }
+    }
+
     public init(paths: Paths, start: Date = Date()) throws {
         (changes, notify) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
         try FileManager.default.createDirectory(at: paths.transcripts, withIntermediateDirectories: true)

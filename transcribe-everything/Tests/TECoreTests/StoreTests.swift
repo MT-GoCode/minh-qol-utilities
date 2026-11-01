@@ -46,6 +46,20 @@ final class StoreTests: XCTestCase {
         XCTAssertThrowsError(try decoder.decode(Line.self, from: JSONSerialization.data(withJSONObject: noSpeaker)))
     }
 
+    func testDeleteOldKeepsExactlyTheCurrentFileAndForeignFiles() throws {
+        let root = temporaryRoot(self), paths = Paths(root: root)
+        _ = try TranscriptStore(paths: paths, start: Date(timeIntervalSince1970: 1))
+        _ = try TranscriptStore(paths: paths, start: Date(timeIntervalSince1970: 2))
+        let current = try TranscriptStore(paths: paths, start: Date(timeIntervalSince1970: 3))
+        try "keep".write(to: paths.transcripts.appending(path: "notes.txt"), atomically: true, encoding: .utf8)
+        func listing() throws -> Set<String> { Set(try FileManager.default.contentsOfDirectory(atPath: paths.transcripts.path)) }
+        try TranscriptStore.deleteOld(in: paths, except: current.file)
+        XCTAssertEqual(try listing(), [current.file.lastPathComponent, "notes.txt"])
+        try TranscriptStore.deleteOld(in: paths, except: nil)
+        XCTAssertEqual(try listing(), ["notes.txt"])
+        XCTAssertNoThrow(try TranscriptStore.deleteOld(in: Paths(root: temporaryRoot(self)), except: nil))
+    }
+
     func testSecondInstanceMakesANewFileAndNeverReusesOne() async throws {
         let paths = Paths(root: temporaryRoot(self))
         let s = Date(timeIntervalSince1970: 1_700_000_000)

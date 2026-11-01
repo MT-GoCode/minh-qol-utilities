@@ -58,12 +58,23 @@ func temporaryRoot(_ test: XCTestCase) -> URL {
 struct Busy: Error {}
 
 /// Decode time tripled at load 26 on 16 cores (DECISIONS): above the core count the latency bounds do not apply.
-func requireIdleMachine() throws {
+func machineIsBusy() -> Double? {
     var load = [0.0]
     getloadavg(&load, 1)
-    let cores = Double(ProcessInfo.processInfo.activeProcessorCount)
-    if load[0] > cores {
-        XCTFail("machine load \(load[0]) exceeds \(cores) cores: latency bounds do not apply")
+    return load[0] > Double(ProcessInfo.processInfo.activeProcessorCount) ? load[0] : nil
+}
+
+/// Before a timed test. Other work on this Mac comes and goes, so it waits up to 2 minutes, a few one-minute load decays, before refusing.
+func waitForIdleMachine() throws {
+    let deadline = Date().addingTimeInterval(120)
+    while machineIsBusy() != nil, Date() < deadline { Thread.sleep(forTimeInterval: 5) }
+    try requireIdleMachine()
+}
+
+/// After a timed test: a load that rose during the run voids its timings, so this one does not wait.
+func requireIdleMachine() throws {
+    if let load = machineIsBusy() {
+        XCTFail("machine load \(load) exceeds \(ProcessInfo.processInfo.activeProcessorCount) cores: latency bounds do not apply")
         throw Busy()
     }
 }

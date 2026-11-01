@@ -81,7 +81,7 @@ private func until(_ what: String, _ cond: @escaping @Sendable () -> Bool) async
 }
 
 final class MicTests: XCTestCase {
-    private func make(_ fake: FakeMic) -> MicSource { MicSource(id: SourceID(rawValue: "mic"), start: fake.start) }
+    private func make(_ fake: FakeMic, grace: Duration = .zero) -> MicSource { MicSource(id: SourceID(rawValue: "mic"), grace: grace, start: fake.start) }
 
     func testBuffersBecome16kMonoOnTheSampleClock() async throws {
         for (rate, expected) in [(48000.0, 68266.7), (44100.0, 74303.9)] {
@@ -101,7 +101,7 @@ final class MicTests: XCTestCase {
     }
 
     func testStreamFailsWhenBuffersStopForOverOneSecond() async throws {
-        try requireIdleMachine()
+        try waitForIdleMachine()
         let fake = FakeMic(), source = make(fake)
         let got = Task { try await gather(source) }
         try await until("started") { fake.starts == 1 }
@@ -168,7 +168,7 @@ final class MicTests: XCTestCase {
     }
 
     func testStallGuardIsRearmedByARestart() async throws {
-        try requireIdleMachine()
+        try waitForIdleMachine()
         let fake = FakeMic(), source = make(fake)
         let got = Task { try await gather(source) }
         try await until("started") { fake.starts == 1 }
@@ -197,6 +197,25 @@ final class MicTests: XCTestCase {
         fake.emit(rate: 48000, count: 1)
         source.stop()
         _ = try await within("no stall") { try await got.value }
+    }
+
+    func testAFirstBufferSlowerThanTheStallLimitIsNotAStall() async throws {
+        let fake = FakeMic(), source = make(fake, grace: .seconds(3))
+        let got = Task { try await gather(source) }
+        try await until("started") { fake.starts == 1 }
+        try await sleepSeconds(1.5)
+        fake.emit(rate: 48000, count: 1)
+        source.stop()
+        _ = try await within("no stall") { try await got.value }
+    }
+
+    func testACaptureThatNeverDeliversStillFailsAfterTheGrace() async throws {
+        let fake = FakeMic(), source = make(fake, grace: .seconds(1))
+        let got = Task { try await gather(source) }
+        do {
+            _ = try await within("stall") { try await got.value }
+            XCTFail("no stall")
+        } catch is StallGuard.Stalled {}
     }
 
     func testARestartThatFailsFailsTheStream() async throws {

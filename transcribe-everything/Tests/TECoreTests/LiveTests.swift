@@ -81,7 +81,7 @@ final class LiveTests: XCTestCase {
 
     func testThreeSourcesInRealTimeMeetTheLatencyBounds() async throws {
         executionTimeAllowance = 300
-        try requireIdleMachine()
+        try waitForIdleMachine()
         let tr = try await Models.transcriber.value
         let embedder = try await Models.embedder.value
         let turns = try Fixtures.turns()

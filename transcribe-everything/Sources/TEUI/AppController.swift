@@ -185,6 +185,13 @@ public enum Target: Equatable, Sendable {
         state = .stopped
     }
 
+    public private(set) var deleteError: String? { didSet { notify() } }
+
+    public func deleteOld() {
+        deleteError = nil
+        do { try TranscriptStore.deleteOld(in: paths, except: core?.store.file) } catch { deleteError = "Delete old transcriptions: \(error)" }
+    }
+
     public func quit() async {
         await stop()
         terminate()

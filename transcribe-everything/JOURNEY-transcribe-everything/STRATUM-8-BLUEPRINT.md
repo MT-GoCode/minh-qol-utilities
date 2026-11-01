@@ -226,5 +226,5 @@ Menu, `Microphone` checkmark, failure display (S9–S12); device-change policy b
 - Real test 7 stays as blueprinted (posts the notification). Traced: flipping the mic's nominal rate posts no notification; audio stops and the stall guard ends the source with its reason.
 - Real-mic tests 6 and 7 skip with the reason when the screen is locked. Test 8 runs locked: ducking does not depend on what the mic hears.
 - Test 8 bounds both comparisons at 3%: identical runs measured 1.14% apart, voice processing 54%.
-- A restart cancels the stall watcher and starts a new one from the new capture: at load 20 a real restart exceeded 1 s.
+- A restart cancels the stall watcher and starts a new one from the new capture. Each capture gets a 5 s grace before the guard counts (see DECISIONS).
 - Human gate pending: Minh's AirPods, lid and sleep checks.

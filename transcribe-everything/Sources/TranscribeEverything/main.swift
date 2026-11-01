@@ -22,9 +22,10 @@ case nil:
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
     let session = Session(config: ConfigStore(), onStart: { _ in })
-    let bar = MenuBar(session: session)
+    let catalog = WindowCatalog(permissions: session.permissions)
+    let bar = MenuBar(session: session, catalog: catalog, settings: [])
     session.start()
-    withExtendedLifetime((session, bar)) { app.run() }
+    withExtendedLifetime((session, catalog, bar)) { app.run() }
 default:
     FileHandle.standardError.write(Data("usage: TranscribeEverything [prefetch | verify <scenario.json>]\n".utf8))
     exit(2)
