@@ -73,12 +73,11 @@ same file makes the thumbnails (from the keyframe nearest the pointer), started 
 ./test --filter Integration  a filter on the same suite, never a separate suite
 EVP_E2E_FULLSCREEN=1 ./test  also run the full-screen E2E test (it takes over the display)
 EVP_E2E_MEDIA=1 ./test       also run the media-key E2E test (the keys go to the whole system: no music app open)
-EVP_RAC=<path> ./test        use another copy of the rac script (E2E tests run the driver through `rac exec`)
 ```
 
 `./test` builds the app, runs the unit and integration tests in parallel and then the E2E tests one at a time. The E2E
-tests open real windows (in the background, `evp -g`) and need `rac exec` for screenshots, accessibility and key input,
-so they need an unlocked screen and cannot run while demonlock is blocking: only the headless groups can. Requires `swift`, `pkgconf`, `mpv`
+tests open real windows (in the background, `evp -g`) and drive them with screenshots, accessibility and key input, so
+`./test` must start from an app holding the Accessibility and Screen Recording permissions (each E2E test fails and says so otherwise). They need an unlocked screen and cannot run while demonlock is blocking: only the headless groups can. Requires `swift`, `pkgconf`, `mpv`
 and (tests only) `ffmpeg`, all from Homebrew; `./test` checks and says what is missing.
 
 State lives in one JSON file, `~/Library/Application Support/EVP/state.json` (`EVP_HOME` overrides the folder; the tests use a scratch one): per-file
