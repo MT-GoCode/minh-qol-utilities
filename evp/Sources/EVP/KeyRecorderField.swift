@@ -42,11 +42,12 @@ final class KeyRecorderField: NSButton {
     private func render() { title = recording ? "Press a key…" : chord.map(\.description) ?? "Not set" }
 
     @objc private func startRecording() {
-        window?.makeFirstResponder(self)
-        recording = true
+        recording = window?.makeFirstResponder(self) == true
     }
 
     override func keyDown(with event: NSEvent) {
+        // A held key must not record itself, or press the button again and restart the recording it just ended.
+        guard !event.isARepeat else { return }
         guard recording else { return super.keyDown(with: event) }
         guard let pressed = KeyChord.chord(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers ?? "", modifiers: Modifiers(event.modifierFlags)) else { return }
         recording = false

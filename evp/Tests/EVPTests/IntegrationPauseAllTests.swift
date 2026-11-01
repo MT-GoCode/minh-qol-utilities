@@ -107,4 +107,24 @@ final class IntegrationPauseAllTests: XCTestCase {
         try pauseAll.press(over: [first, second])
         XCTAssertEqual([first.paused, second.paused], [false, false], "second is resumed, first was already playing and stays so")
     }
+
+    func testAVideoThatCannotBePausedDoesNotStopTheOthers() throws {
+        struct Refusal: Error {}
+        final class Fake: Pausable {
+            var paused = false
+            let refuses: Bool
+            init(refuses: Bool = false) { self.refuses = refuses }
+            func isPaused() throws -> Bool { paused }
+            func setPaused(_ value: Bool) throws {
+                if refuses { throw Refusal() }
+                paused = value
+            }
+        }
+        let (first, broken, last) = (Fake(), Fake(refuses: true), Fake())
+        let pauseAll = PauseAll()
+        XCTAssertThrowsError(try pauseAll.press(over: [first, broken, last]))
+        XCTAssertEqual([first.paused, last.paused], [true, true])
+        try pauseAll.press(over: [first, broken, last])
+        XCTAssertEqual([first.paused, last.paused], [false, false], "the ones it did pause were remembered")
+    }
 }

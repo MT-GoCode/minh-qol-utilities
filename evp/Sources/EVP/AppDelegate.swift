@@ -108,7 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, Settin
         do {
             let controller = try PlayerWindowController(request, store: store, session: session, restoring: restoring)
             controller.onClose = { [weak self] closed in self?.videoClosed(closed) }
-            controller.onPlayingChanged = { [weak self] in self?.mediaKeys.refresh() }
+            controller.onMediaStateChanged = { [weak self] in self?.mediaKeys.refresh() }
             players.append(controller)
             cascadePoint = controller.show(cascadingFrom: cascadePoint)
         } catch {

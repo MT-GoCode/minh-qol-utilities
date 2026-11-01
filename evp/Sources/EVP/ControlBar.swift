@@ -120,7 +120,7 @@ final class ControlBar: NSView {
         durationLabel.stringValue = " / \(TimeFormat.format(seconds))"
     }
     func setPaused(_ paused: Bool) { playPause.title = paused ? "▶" : "⏸" }
-    func setSpeed(_ speed: Double) { speedButton.title = String(format: "%.1fx", speed) }
+    func setSpeed(_ speed: Double) { speedButton.title = PlaybackLimits.label(speed: speed) }
     func setVolume(_ volume: Double) { volumeSlider.doubleValue = volume }
     func showFeedback(_ text: String) { feedbackLabel.stringValue = text }
 

@@ -1,3 +1,4 @@
+import ApplicationServices
 import XCTest
 
 /// The test driver is a tool the later strata depend on; `windows` is the part that runs without input injection.
@@ -14,5 +15,17 @@ final class IntegrationDriverTests: XCTestCase {
         driver.waitUntilExit()
         XCTAssertEqual(driver.terminationStatus, 2)
         XCTAssertEqual(String(decoding: stderr.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self), "no windows for pid 999999\n")
+    }
+
+    /// The driver inherits this process's permissions, so the two must agree in either kind of run.
+    func testCheckFailsExactlyWhenAPermissionIsMissing() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let driver = Process()
+        driver.executableURL = root.appendingPathComponent(".build/evpdrive")
+        driver.arguments = ["check"]
+        driver.standardError = Pipe()
+        try driver.run()
+        driver.waitUntilExit()
+        XCTAssertEqual(driver.terminationStatus, AXIsProcessTrusted() && CGPreflightScreenCaptureAccess() ? 0 : 2)
     }
 }
