@@ -20,6 +20,27 @@ Probes (`/tmp/te-ovl-probe/{p,q,r}.swift`, headless, no app, no mouse). The scre
 
 New: `Sources/TEUI/{Overlay,VerifyOverlay}.swift`, `Tests/TECoreTests/{OverlaySupport,OverlayTests}.swift`. Edited: `Sources/TEUI/Verify.swift`, `Sources/TranscribeEverything/main.swift`. `Package.swift` already has `TEUI` in the test target (S9).
 
+## `Sources/TECore/Config.swift` (edit)
+`Overlay` subscribes to `changes()` here; S14 replaces this file whole and keeps the same method. Add to `ConfigStore` (and change `set` as shown; it stays non-throwing until S14, and `try await` on it compiles with a warning, so call sites need no edit at S14):
+```swift
+private var subscribers: [UUID: AsyncStream<Void>.Continuation] = [:]
+public func set(_ config: Config) {
+    guard config != current else { return }
+    current = config
+    for c in subscribers.values { c.yield() }
+}
+/// Yields after every change of `current`. One stream per caller.
+public func changes() -> AsyncStream<Void> {
+    let id = UUID()
+    let (stream, c) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
+    c.onTermination = { _ in Task { await self.drop(id) } }
+    subscribers[id] = c
+    return stream
+}
+private func drop(_ id: UUID) { subscribers[id] = nil }
+```
+Add `import Foundation`.
+
 ## `Sources/TEUI/Overlay.swift`
 ```swift
 import AppKit

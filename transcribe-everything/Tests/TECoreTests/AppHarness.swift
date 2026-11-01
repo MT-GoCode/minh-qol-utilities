@@ -1,8 +1,9 @@
 import CryptoKit
 import Foundation
 import XCTest
+import os
 
-enum HarnessError: Error { case buildFailed(Int32, log: String), stale(String), app(String), noReport }
+enum HarnessError: Error { case buildFailed(Int32, log: String), stale(String), app(String), noReport, neverReady }
 
 enum AppHarness {
     static let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -38,6 +39,26 @@ enum AppHarness {
         return json
     }
 
+    /// Once per test process: SCK lists no display while the display sleeps. The assertion ends with this process.
+    static let displayAwake = Result<Void, Error> {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate")
+        p.arguments = ["-u", "-d", "-w", "\(getpid())"]
+        try p.run()
+        Thread.sleep(forTimeInterval: 2)  // the 2 s the probe waited after waking before SCK listed the display
+    }
+
+    /// Mutes system output for `body` and restores the previous mute state, not "unmuted".
+    static func muted<T>(_ body: () async throws -> T) async throws -> T {
+        FileHandle.standardError.write(Data("AppHarness: muting system output until this test ends; a call in progress goes silent\n".utf8))
+        let before = try isMuted()
+        try setMuted(true)
+        defer { try? setMuted(before) }
+        return try await body()
+    }
+    static func isMuted() throws -> Bool { try sh("/usr/bin/osascript", ["-e", "output muted of (get volume settings)"]).out.trimmingCharacters(in: .whitespacesAndNewlines) == "true" }
+    static func setMuted(_ m: Bool) throws { try sh("/usr/bin/osascript", ["-e", "set volume output muted \(m)"]) }
+
     /// Runs a tool to completion. `log` receives stdout and stderr; otherwise they are returned in `out`.
     @discardableResult
     static func sh(_ exe: String, _ args: [String], env: [String: String] = [:], log: URL? = nil) throws -> (status: Int32, out: String) {
@@ -61,5 +82,31 @@ enum AppHarness {
         let data = pipe.fileHandleForReading.readDataToEndOfFile()  // before waiting, or a full pipe hangs
         p.waitUntilExit()
         return (p.terminationStatus, String(decoding: data, as: UTF8.self))
+    }
+}
+
+/// One running launch of the app.
+final class Launch {
+    let report: Task<[String: Any], Error>
+    private let done: OSAllocatedUnfairLock<Bool>
+    init(root: URL, steps: [[String: Any]]) {
+        let done = OSAllocatedUnfairLock(initialState: false)
+        self.done = done
+        report = Task.detached {
+            defer { done.withLock { $0 = true } }
+            return try AppHarness.run(root: root, steps: steps)
+        }
+    }
+    /// Returns when the app wrote `ready`; throws the app's own error if it exits first. A capture that never delivers throws at the deadline, 2 minutes being far above any model load seen, and the test's `stop` then ends the app.
+    func ready(in root: URL) async throws {
+        let deadline = Date().addingTimeInterval(120)
+        while !FileManager.default.fileExists(atPath: root.appending(path: "ready").path) {
+            if done.withLock({ $0 }) {
+                _ = try await report.value
+                throw HarnessError.noReport
+            }
+            if Date() > deadline { throw HarnessError.neverReady }
+            try await Task.sleep(for: .milliseconds(50))
+        }
     }
 }

@@ -10,6 +10,7 @@ struct Scenario: Decodable {
 /// Tagged by "op" at decode and routed once, in `run`: a new op is a new case, and the compiler flags `run`.
 enum Step: Decodable {
     case transcribe(path: String)
+    case capture(CaptureSpec)
 
     private enum Key: String, CodingKey { case op, path }
 
@@ -17,6 +18,7 @@ enum Step: Decodable {
         let c = try decoder.container(keyedBy: Key.self)
         switch try c.decode(String.self, forKey: .op) {
         case "transcribe": self = .transcribe(path: try c.decode(String.self, forKey: .path))
+        case "capture": self = .capture(try CaptureSpec(from: decoder))
         case let op: throw DecodingError.dataCorruptedError(forKey: .op, in: c, debugDescription: "unknown op \(op)")
         }
     }
@@ -30,6 +32,8 @@ enum Step: Decodable {
             let text = try await app.transcriber.transcribe(samples).text
             let d = t0.duration(to: .now).components
             return ["op": "transcribe", "path": path, "text": text, "seconds": Double(d.seconds) + Double(d.attoseconds) * 1e-18]
+        case .capture(let spec):
+            return try await app.capture(spec)
         }
     }
 }

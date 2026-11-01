@@ -7,7 +7,6 @@ final class PipelineTests: XCTestCase {
     private let convID = SourceID(rawValue: "conv"), contID = SourceID(rawValue: "cont")
     private func conv() throws -> FileSource { try FileSource(url: Fixtures.conversationWav, id: convID, tag: "conv") }
     private func cont() throws -> FileSource { try FileSource(url: Fixtures.continuousWav, id: contID, tag: "cont") }
-    private func cuts(_ lines: [Line]) -> Int { zip(lines, lines.dropFirst()).filter { $1.start == $0.end && $1.spk == $0.spk }.count }
 
     func testConversationBecomesFourteenLinesMappedToTheTwelveTurns() async throws {
         let (lines, ends, file) = try await runToEnd([conv()], temporaryRoot(self))

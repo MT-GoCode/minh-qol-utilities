@@ -1,12 +1,18 @@
 import FluidAudio
 import Foundation
 
-public enum Priority: Sendable { case commit, provisional }
+public enum Priority: Sendable, Codable { case commit, provisional }
 
 /// One finished decode, for latency tests.
-public struct Decode: Sendable {
+public struct Decode: Sendable, Codable {
     public let priority: Priority
     public let submitted, started, finished: Date
+    public init(priority: Priority, submitted: Date, started: Date, finished: Date) {
+        self.priority = priority
+        self.submitted = submitted
+        self.started = started
+        self.finished = finished
+    }
 }
 
 public actor Transcriber {

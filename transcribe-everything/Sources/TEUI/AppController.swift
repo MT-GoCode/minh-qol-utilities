@@ -6,6 +6,7 @@ public final class AppController {
     public let transcriber: Transcriber
     public let engine: Engine
     public let store: TranscriptStore
+    public let paths: Paths
 
     public static func start(paths: Paths = Paths()) async throws -> AppController {
         async let transcriber = Transcriber.load()
@@ -13,12 +14,13 @@ public final class AppController {
         async let vad = VadManager()
         let store = try TranscriptStore(paths: paths)
         let t = try await transcriber
-        return AppController(t, store, Engine(transcriber: t, embedder: try await embedder, vad: try await vad, store: store, config: ConfigStore()))
+        return AppController(t, store, paths, Engine(transcriber: t, embedder: try await embedder, vad: try await vad, store: store, config: ConfigStore()))
     }
 
-    private init(_ transcriber: Transcriber, _ store: TranscriptStore, _ engine: Engine) {
+    private init(_ transcriber: Transcriber, _ store: TranscriptStore, _ paths: Paths, _ engine: Engine) {
         self.transcriber = transcriber
         self.store = store
+        self.paths = paths
         self.engine = engine
     }
 }

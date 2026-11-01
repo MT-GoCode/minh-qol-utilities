@@ -141,3 +141,67 @@ final class HangingSource: TECore.AudioSource, @unchecked Sendable {
     }
     func stop() { cont.withLock { $0?.finish() } }
 }
+
+/// DECISIONS latency bounds. Queue wait itself is never added, so a starved commit goes red.
+struct Latency {
+    let records: [Decode]
+    func ran(_ r: Decode) -> Double { r.finished.timeIntervalSince(r.started) }
+    func inflight(_ r: Decode) -> Double { records.first { $0.started < r.submitted && r.submitted < $0.finished && $0.started != r.started }.map(ran) ?? 0 }
+    func ahead(_ r: Decode) -> [Decode] { records.filter { r.submitted <= $0.started && $0.started < r.started } }
+    func commitBound(_ c: Decode, embedMax: Double, sources: Int) -> Double { 1.28 + ran(c) + Double(sources) * embedMax + inflight(c) + ahead(c).map(ran).reduce(0, +) }
+    func firstBound(_ p: Decode) -> Double { 0.866 + ran(p) + inflight(p) + ahead(p).map(ran).reduce(0, +) }
+}
+
+/// Max embed duration while a decode runs, because they contend for the same hardware.
+func measureEmbedMax(_ tr: Transcriber, _ embedder: Embedder, _ audio: [Float]) async throws -> Double {
+    let window = Array(audio.prefix(32000))
+    let contention = Task { _ = try await tr.transcribe(audio) }
+    var embedMax = 0.0
+    for _ in 0..<30 {
+        let t = Date()
+        _ = try await embedder.embed(window)
+        embedMax = max(embedMax, Date().timeIntervalSince(t))
+    }
+    _ = try await contention.value
+    return embedMax
+}
+
+/// Force-cuts: adjacent lines that touch with one speaker. Each may cost a word at the seam.
+func cuts(_ lines: [Line]) -> Int { zip(lines, lines.dropFirst()).filter { $1.start == $0.end && $1.spk == $0.spk }.count }
+
+struct SpeakerRef {
+    let start, end: Double
+    let spk: String
+}
+
+/// Maximum words on the diagonal of a one-to-one label-to-truth assignment.
+private func bestMatch(_ cells: [Int: [String: Int]]) -> Int {
+    let cols = Array(Set(cells.values.flatMap(\.keys)))
+    var dp = [0: 0]
+    for row in cells.values {
+        var next = dp
+        for (mask, v) in dp {
+            for (j, col) in cols.enumerated() where mask & (1 << j) == 0 {
+                next[mask | 1 << j] = max(next[mask | 1 << j] ?? 0, v + (row[col] ?? 0))
+            }
+        }
+        dp = next
+    }
+    return dp.values.max()!
+}
+
+/// Share of words whose line's speaker agrees with the truth under the best one-to-one label mapping. Words with no single true speaker do not count.
+func speakerAccuracy(_ lines: [Line], midpoints: [Double], truth: [SpeakerRef]) -> Double {
+    var cells: [Int: [String: Int]] = [:]
+    var total = 0
+    for m in midpoints {
+        let who = Set(truth.filter { $0.start <= m && m < $0.end }.map(\.spk))
+        guard who.count == 1 else { continue }
+        total += 1  // a word no line covers counts as wrong: lost speech cannot raise accuracy
+        // Word times differ slightly between decodes, so a word in a gap between runs takes the nearest line.
+        let distance = { (l: Line) in max(l.start - m, m - l.end, 0) }
+        guard let line = lines.min(by: { distance($0) < distance($1) }), distance(line) < 0.5 else { continue }
+        cells[line.spk, default: [:]][who.first!, default: 0] += 1
+    }
+    return Double(bestMatch(cells)) / Double(total)
+}

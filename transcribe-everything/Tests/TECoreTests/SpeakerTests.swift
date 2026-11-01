@@ -3,32 +3,11 @@ import Foundation
 import TECore
 import XCTest
 
-private struct Ref {
-    let start, end: Double
-    let spk: String
-}
-
-private func refs(rttm name: String) throws -> [Ref] {
+private func refs(rttm name: String) throws -> [SpeakerRef] {
     try String(contentsOf: Fixtures.dir.appending(path: name), encoding: .utf8).split(separator: "\n").map {
         let f = $0.split(separator: " ")
-        return Ref(start: Double(f[3])!, end: Double(f[3])! + Double(f[4])!, spk: String(f[7]))
+        return SpeakerRef(start: Double(f[3])!, end: Double(f[3])! + Double(f[4])!, spk: String(f[7]))
     }
-}
-
-/// Maximum words on the diagonal of a one-to-one label-to-truth assignment.
-private func bestMatch(_ cells: [Int: [String: Int]]) -> Int {
-    let cols = Array(Set(cells.values.flatMap(\.keys)))
-    var dp = [0: 0]
-    for row in cells.values {
-        var next = dp
-        for (mask, v) in dp {
-            for (j, col) in cols.enumerated() where mask & (1 << j) == 0 {
-                next[mask | 1 << j] = max(next[mask | 1 << j] ?? 0, v + (row[col] ?? 0))
-            }
-        }
-        dp = next
-    }
-    return dp.values.max()!
 }
 
 final class SpeakerTests: XCTestCase {
@@ -64,7 +43,7 @@ final class SpeakerTests: XCTestCase {
     }
 
     /// Per word, one-to-one mapping: a spurious speaker costs its words. Words come from one whole-file decode, independent of the pipeline.
-    private func speakerCase(_ name: String, _ wav: URL, _ ref: [Ref], found ok: (Int) -> Bool, accuracy bound: Double) async throws {
+    private func speakerCase(_ name: String, _ wav: URL, _ ref: [SpeakerRef], found ok: (Int) -> Bool, accuracy bound: Double) async throws {
         let id = SourceID(rawValue: name)
         let (lines, ends, file) = try await runToEnd([FileSource(url: wav, id: id, tag: name)], temporaryRoot(self))
         XCTAssertNil(ends[0].error)
@@ -72,20 +51,9 @@ final class SpeakerTests: XCTestCase {
         try FileManager.default.copyItem(at: file, to: resultsDir().appending(path: "speakers-\(name).jsonl"))
         let samples: [Float] = try await collect(FileSource(url: wav, id: id, tag: name)).flatMap { $0.samples }
         let words = buildWordTimings(from: try await Models.transcriber.value.transcribe(samples).tokenTimings!)
-        var cells: [Int: [String: Int]] = [:]
-        var total = 0
-        for w in words {
-            let m = (w.startTime + w.endTime) / 2
-            let who = Set(ref.filter { $0.start <= m && m < $0.end }.map(\.spk))
-            guard who.count == 1 else { continue }
-            total += 1  // a word no line covers counts as wrong: lost speech cannot raise accuracy
-            // Word times differ slightly between decodes, so a word in a gap between runs takes the nearest line.
-            let distance = { (l: Line) in max(l.start - m, m - l.end, 0) }
-            guard let line = lines.min(by: { distance($0) < distance($1) }), distance(line) < 0.5 else { continue }
-            cells[line.spk, default: [:]][who.first!, default: 0] += 1
-        }
-        let found = Set(lines.map(\.spk)).count, accuracy = Double(bestMatch(cells)) / Double(total)
-        let row = "| \(name) | \(found) | \(String(format: "%.1f%%", accuracy * 100)) | \(total) | \(Int(bound * 100))% |\n"
+        let found = Set(lines.map(\.spk)).count
+        let accuracy = speakerAccuracy(lines, midpoints: words.map { ($0.startTime + $0.endTime) / 2 }, truth: ref)
+        let row = "| \(name) | \(found) | \(String(format: "%.1f%%", accuracy * 100)) | \(words.count) | \(Int(bound * 100))% |\n"
         let report = resultsDir().appending(path: "speakers.md")
         let old = (try? String(contentsOf: report, encoding: .utf8)) ?? "| clip | speakers found | word accuracy | words | bound |\n|---|---|---|---|---|\n"
         try (old + row).write(to: report, atomically: true, encoding: .utf8)
@@ -95,7 +63,7 @@ final class SpeakerTests: XCTestCase {
 
     // Bounds: DECISIONS measurement minus 2 points.
     func testConversation() async throws {
-        let ref = try Fixtures.turns().map { Ref(start: $0.start, end: $0.end, spk: $0.speaker) }
+        let ref = try Fixtures.turns().map { SpeakerRef(start: $0.start, end: $0.end, spk: $0.speaker) }
         try await speakerCase("conversation", Fixtures.conversationWav, ref, found: { $0 == 3 }, accuracy: 0.92)
     }
     func testAmi() async throws { try await speakerCase("ami", Fixtures.dir.appending(path: "ami.wav"), refs(rttm: "ami.rttm"), found: { $0 <= 5 }, accuracy: 0.94) }

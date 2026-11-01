@@ -54,3 +54,16 @@ func temporaryRoot(_ test: XCTestCase) -> URL {
     test.addTeardownBlock { try? FileManager.default.removeItem(at: u) }
     return u
 }
+
+struct Busy: Error {}
+
+/// Decode time tripled at load 26 on 16 cores (DECISIONS): above the core count the latency bounds do not apply.
+func requireIdleMachine() throws {
+    var load = [0.0]
+    getloadavg(&load, 1)
+    let cores = Double(ProcessInfo.processInfo.activeProcessorCount)
+    if load[0] > cores {
+        XCTFail("machine load \(load[0]) exceeds \(cores) cores: latency bounds do not apply")
+        throw Busy()
+    }
+}

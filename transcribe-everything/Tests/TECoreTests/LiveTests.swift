@@ -4,19 +4,6 @@ import TECore
 import XCTest
 import os
 
-private struct Busy: Error {}
-
-/// Decode time tripled at load 26 on 16 cores (DECISIONS): above the core count the latency bounds do not apply.
-private func requireIdleMachine() throws {
-    var load = [0.0]
-    getloadavg(&load, 1)
-    let cores = Double(ProcessInfo.processInfo.activeProcessorCount)
-    if load[0] > cores {
-        XCTFail("machine load \(load[0]) exceeds \(cores) cores: latency bounds do not apply")
-        throw Busy()
-    }
-}
-
 private func footprintMB() -> Double {
     var info = task_vm_info_data_t()
     var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
@@ -26,8 +13,6 @@ private func footprintMB() -> Double {
     precondition(kr == KERN_SUCCESS)
     return Double(info.phys_footprint) / 1_048_576
 }
-
-private func ran(_ d: Decode) -> Double { d.finished.timeIntervalSince(d.started) }
 
 final class LiveTests: XCTestCase {
     private let convID = SourceID(rawValue: "conv")
@@ -102,16 +87,7 @@ final class LiveTests: XCTestCase {
         let turns = try Fixtures.turns()
         let audio: [Float] = try await collect(conv()).flatMap { $0.samples }
 
-        // Embed durations sampled while a decode runs, because they contend for the same hardware.
-        let window = Array(audio.prefix(32000))
-        let contention = Task { _ = try await tr.transcribe(audio) }
-        var embedMax = 0.0
-        for _ in 0..<30 {
-            let t = Date()
-            _ = try await embedder.embed(window)
-            embedMax = max(embedMax, Date().timeIntervalSince(t))
-        }
-        _ = try await contention.value
+        let embedMax = try await measureEmbedMax(tr, embedder, audio)
 
         let recorded = OSAllocatedUnfairLock<[Decode]>(initialState: [])
         await tr.observe { d in recorded.withLock { $0.append(d) } }
@@ -138,11 +114,7 @@ final class LiveTests: XCTestCase {
         try requireIdleMachine()
         let lines = await store.snapshot().lines
         let records = recorded.withLock { $0 }, seen = seenLock.withLock { $0 }
-
-        func inflight(_ r: Decode) -> Double {
-            records.first { $0.started < r.submitted && r.submitted < $0.finished && $0.started != r.started }.map(ran) ?? 0
-        }
-        func ahead(_ r: Decode) -> [Decode] { records.filter { r.submitted <= $0.started && $0.started < r.started } }
+        let lat = Latency(records: records)
 
         var table = "| source | turn | first text s | bound | commit s | bound |\n|---|---|---|---|---|---|\n"
         for k in 0..<3 {
@@ -154,9 +126,8 @@ final class LiveTests: XCTestCase {
                 let mine = own.filter { turnOf($0, turns) == j }
                 let t = try XCTUnwrap(mine.map(\.t).max(), "source \(k) turn \(j) has no line")
                 let c = try XCTUnwrap(records.filter { $0.priority == .commit && $0.finished <= t }.max { $0.finished < $1.finished })
-                XCTAssertTrue(ahead(c).allSatisfy { $0.priority == .commit }, "only commits are served ahead of a commit")
-                // DECISIONS: 1.28 s + its decode + embeds + one in-flight decode + commits queued ahead. Queue wait is never added.
-                let commitBound = 1.28 + ran(c) + 3 * embedMax + inflight(c) + ahead(c).map(ran).reduce(0, +)
+                XCTAssertTrue(lat.ahead(c).allSatisfy { $0.priority == .commit }, "only commits are served ahead of a commit")
+                let commitBound = lat.commitBound(c, embedMax: embedMax, sources: 3)
                 let commitLatency = t.timeIntervalSince(lastWord)
                 XCTAssertLessThanOrEqual(commitLatency, commitBound, "source \(k) turn \(j) commit")
 
@@ -166,9 +137,8 @@ final class LiveTests: XCTestCase {
                     o.1.lines.filter { $0.src == ids[k] }.count >= earlier && o.1.tails.contains { $0.src == ids[k] }
                 }?.0, "source \(k) turn \(j) showed no text")
                 let p = try XCTUnwrap(records.filter { $0.priority == .provisional && $0.finished <= first }.max { $0.finished < $1.finished })
-                XCTAssertLessThanOrEqual(ahead(p).filter { $0.priority == .provisional }.count, 2, "round-robin")
-                // DECISIONS: 0.866 s + that decode + what it waited behind, counted from the queue.
-                let firstBound = 0.866 + ran(p) + inflight(p) + ahead(p).map(ran).reduce(0, +)
+                XCTAssertLessThanOrEqual(lat.ahead(p).filter { $0.priority == .provisional }.count, 2, "round-robin")
+                let firstBound = lat.firstBound(p)
                 let firstLatency = first.timeIntervalSince(onset)
                 XCTAssertLessThanOrEqual(firstLatency, firstBound, "source \(k) turn \(j) first text")
                 table += String(format: "| %d | %d | %.3f | %.3f | %.3f | %.3f |\n", k, j, firstLatency, firstBound, commitLatency, commitBound)

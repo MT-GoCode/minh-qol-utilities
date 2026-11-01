@@ -368,3 +368,10 @@ Mic (S8), menu/attach/permissions (S9–S10), window catalog, LaunchAgent. `AppS
 # Review corrections (apply at build)
 - `QuickTime.quit()` ends with `eventually("QuickTime exited") { pgrep -x is empty }`.
 - `Launch.init`: capture a local `let` lock so the closure compiles; set `done` under the lock.
+
+# Build findings (supersede the sections above)
+- `AppSource` restarts its stream when the app gains an audio helper (`AudioHelpers`): test 7 found attach-then-play silent in Chrome. See DECISIONS.
+- `Chrome.launch` uses `open -g -n` and finds the pid with `pgrep`, so Chrome, not the test, is responsible for its helper.
+- Test 4 checks speakers with `speakerAccuracy` (lifted from `SpeakerTests`). Tests 4 and 7 allow `captureExcess*` words; the oracle bound assumed identical samples.
+- `runCapture` holds the display awake; SCK lists no display while it sleeps. Tests 4–7 call `requireNoFailure()` so a failed source reports its reason.
+- A restart starts the new stream first, adopts it, then stops the old one, so no audio gap exists and the stall guard never fires for a restart (S7 review).
