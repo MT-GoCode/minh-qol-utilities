@@ -128,7 +128,12 @@ private final class Tap: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked 
     /// From now on only this stream's buffers count, so an overlap during a restart never doubles audio.
     func adopt(_ s: SCStream) { queue.sync { current = s } }
 
-    func stream(_ s: SCStream, didStopWithError error: Error) { out.finish(throwing: error) }
+    /// A stream a restart replaced may report its own stop; only the current one's end is the source's.
+    func stream(_ s: SCStream, didStopWithError error: Error) {
+        queue.async { [self] in
+            if s === current { out.finish(throwing: error) }
+        }
+    }
 
     func stream(_ s: SCStream, didOutputSampleBuffer sb: CMSampleBuffer, of type: SCStreamOutputType) {
         guard s === current else { return }

@@ -114,6 +114,11 @@ enum QuickTime {
     }
     static func play() throws { _ = try tell("play document 1") }
     static func pause() throws { _ = try tell("pause document 1") }
+    /// Something outside the test can pause playback (seen with AirPods as the output): say so, instead of failing later on missing words.
+    static func requirePlayedThrough(_ seconds: Double) throws {
+        let at = Double(try tell("current time of document 1")) ?? 0
+        if at < seconds - 1 { throw CaptureError.tool("QuickTime stopped at \(at) s of \(seconds) s: something outside the test paused it") }
+    }
     static func quit() async throws {
         guard try !pids().isEmpty else { return }
         _ = try tell("quit")

@@ -62,6 +62,7 @@ final class CaptureTests: XCTestCase {
             let cap = try await runCapture(self, [appSource("qt", "QuickTime", pid)]) {
                 try QuickTime.play()
                 try await sleepSeconds(Double(conv.count) / 16000 + captureTail)
+                try QuickTime.requirePlayedThrough(Double(conv.count) / 16000)
             }
             try cap.requireNoFailure()
             try requireIdleMachine()
@@ -177,6 +178,7 @@ final class CaptureTests: XCTestCase {
                 try QuickTime.play()
                 try chrome.go()
                 try await sleepSeconds(Double(max(conv.count, cont.count)) / 16000 + captureTail)
+                try QuickTime.requirePlayedThrough(Double(conv.count) / 16000)
             }
             try cap.requireNoFailure()
             try? FileManager.default.copyItem(at: cap.transcript, to: resultsDir().appending(path: "capture-two-apps.jsonl"))
