@@ -13,7 +13,8 @@ extension MpvPlayer: Pausable {
 /// The global pause key: the first press pauses every video that is playing and remembers which; the next press resumes
 /// exactly those that are still paused, not videos the user paused by hand and not ones that were opened since. A
 /// resume that throws keeps the whole set remembered, so the next press retries it. If the user already resumed all
-/// of them by hand, the press pauses what plays, as if nothing were remembered.
+/// of them by hand, the press pauses what plays, as if nothing were remembered. A video that cannot be paused does not
+/// stop the others: the press pauses them all and then throws the first error.
 public final class PauseAll {
     private struct Remembered {
         weak var player: Pausable?
@@ -32,9 +33,16 @@ public final class PauseAll {
             return
         }
         remembered = []
-        for player in players where try !player.isPaused() {
-            try player.setPaused(true)
-            remembered.append(Remembered(player: player))
+        var failure: Error?
+        for player in players {
+            do {
+                guard try !player.isPaused() else { continue }
+                try player.setPaused(true)
+                remembered.append(Remembered(player: player))
+            } catch {
+                failure = failure ?? error
+            }
         }
+        if let failure { throw failure }
     }
 }

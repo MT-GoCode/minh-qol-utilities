@@ -172,7 +172,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private func bindingRow(_ action: Action) -> NSView {
         let recorder = KeyRecorderField()
-        recorder.onChord = { [weak self] chord in self?.changeKeymap { try $0.bind(chord, to: action) } }
+        recorder.onChord = { [weak self] chord in self?.record(chord, for: action) }
         recorder.onClear = { [weak self] in self?.changeKeymap { $0.unbind(action) } }
         if Action.global.contains(action) { recorder.onRecording = { [weak self] in self?.host?.holdGlobalHotkey($0) } }
         recorder.setAccessibilityIdentifier("bind-\(action.rawValue)")
@@ -184,6 +184,23 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     // MARK: Changes
+
+    /// The menu bar takes its key equivalents before any window sees them, so such a binding would never fire.
+    private func record(_ chord: KeyChord, for action: Action) {
+        if let title = menuTitle(using: chord, in: NSApp.mainMenu) {
+            message.stringValue = "\(chord) is used by the menu item \"\(title)\"."
+            return refresh()
+        }
+        changeKeymap { try $0.bind(chord, to: action) }
+    }
+
+    private func menuTitle(using chord: KeyChord, in menu: NSMenu?) -> String? {
+        for item in menu?.items ?? [] {
+            if item.keyEquivalent == chord.key, Modifiers(item.keyEquivalentModifierMask) == chord.modifiers { return item.title }
+            if let title = menuTitle(using: chord, in: item.submenu) { return title }
+        }
+        return nil
+    }
 
     @objc private func enableReliableKeys() {
         host?.enableTap()

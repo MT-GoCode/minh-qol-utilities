@@ -70,6 +70,7 @@ final class IntegrationPreviewTests: XCTestCase {
             while got.count <= index, Date() < deadline { RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.02)) }
         }
         XCTAssertEqual(got.map(\.0), [20, 20, 5, 5, 0])
+        guard got.count == 5 else { return }
         XCTAssertNotEqual(got[0].1, got[2].1, "the end and 0:05 must differ: the player still seeks after reaching the end")
     }
 
@@ -83,6 +84,7 @@ final class IntegrationPreviewTests: XCTestCase {
         preview.onFrame = { _, _ in XCTFail("a frame from a file that is not a video") }
         let deadline = Date().addingTimeInterval(Session.timeout)
         while errors.isEmpty, Date() < deadline { RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.02)) }
+        RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.5))  // room for a duplicate
         XCTAssertEqual(errors.count, 1)
     }
 }

@@ -72,4 +72,24 @@ final class E2EMemoryTests: E2ETestCase {
         sleep(2)  // a duplicate would open after the restore loop
         XCTAssertEqual(try app!.playerWindows().count, 2, "the file opened at launch was restored a second time")
     }
+
+    func testAWindowSavedOnAScreenThatIsGoneComesBackOnThisOne() throws {
+        let home = stateFolder()
+        app = try RunningApp.launch([try Fixtures.url("tv.mp4").path], home: home)
+        _ = try windows(1)
+        try app!.terminate()
+        let file = home.appendingPathComponent("state.json")
+        var state = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        var saved = try XCTUnwrap(state["windows"] as? [[String: Any]])
+        var frame = try XCTUnwrap(saved[0]["frame"] as? [String: Any])
+        frame["x"] = 100_000
+        saved[0]["frame"] = frame
+        state["windows"] = saved
+        try JSONSerialization.data(withJSONObject: state).write(to: file)
+
+        app = try RunningApp.launch([], home: home)
+        let window = try XCTUnwrap(try windows(1).first)
+        let bounds = NSScreen.screens.reduce(CGRect.null) { $0.union($1.frame) }
+        XCTAssertTrue(bounds.intersects(CGRect(x: window.x, y: window.y, width: window.width, height: window.height)), "window at \(window.x)")
+    }
 }

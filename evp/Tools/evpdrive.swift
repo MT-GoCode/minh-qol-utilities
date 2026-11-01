@@ -239,5 +239,5 @@ case "snapshot" where args.count == 3: snapshot(window: int(args[1]), to: args[2
 case "snapshot-screen" where args.count == 2: screen(to: args[1])
 case "key" where args.count >= 3: postKey(target: parseTarget(args[1]), chord: args[2], count: args.count > 3 ? int(args[3]) : 1)
 case "media" where args.count >= 2: args.dropFirst().forEach { postMedia(int($0)) }
-default: fail("usage: evpdrive windows <pid> | resize <pid> <w> <h> | press <pid> <id> | perform <pid> <id> <action> | setvalue <pid> <id> <number> | type <pid> <text> | focus <pid> <id> | read <pid> <id> [attribute] | snapshot <window id> <png> | key <pid|hid> <chord> [n] | media <code>...")
+default: fail("usage: evpdrive check | tree <pid> | snapshot-screen <png> | windows <pid> | resize <pid> <w> <h> | press <pid> <id> | perform <pid> <id> <action> | setvalue <pid> <id> <number> | type <pid> <text> | focus <pid> <id> | read <pid> <id> [attribute] | snapshot <window id> <png> | key <pid|hid> <chord> [n] | media <code>...")
 }

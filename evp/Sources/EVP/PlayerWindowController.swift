@@ -8,12 +8,14 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     }
 
     var onClose: ((PlayerWindowController) -> Void)?
-    /// Called when this window starts or stops playing.
-    var onPlayingChanged: (() -> Void)?
+    /// Called when this window starts or stops playing, or becomes or stops being the main window.
+    var onMediaStateChanged: (() -> Void)?
     private(set) var isPlaying = false
     private var duration = 0.0
     /// Thumbnails for hovering the strip; made on the first hover, so a window never hovered runs no second decoder.
     private var preview: FramePreview?
+    /// The preview failed during this hover: the next hover tries again, the rest of this one builds no more players.
+    private var previewBroken = false
     private let bubble = PreviewBubble()
     private var hoverTop: NSPoint?
     private let player: MpvPlayer
@@ -52,6 +54,8 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         restored = restoring != nil
         if let restoring {
             window.setFrame(restoring.frame.rect, display: false)
+            // The screen it was on may be gone; AppKit would leave the window where nobody can reach it.
+            if !NSScreen.screens.contains(where: { $0.visibleFrame.intersects(restoring.frame.rect) }) { window.center() }
             content.barHidden = restoring.barHidden
         }
         super.init(window: window)
@@ -103,7 +107,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             session.closed(id)
             isPlaying = false
             onClose?(self)
-            onPlayingChanged?()
+            onMediaStateChanged?()
         }
     }
 
@@ -118,8 +122,10 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     private func scrubHovered(_ hover: (fraction: Double, top: NSPoint)?) {
         guard let hover, duration > 0 else {
             hoverTop = nil
+            previewBroken = false
             return bubble.hide()
         }
+        guard !previewBroken else { return }
         hoverTop = hover.top
         do {
             if preview == nil {
@@ -130,13 +136,14 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             }
             preview?.show(hover.fraction * duration)
         } catch {
-            bar.showFeedback("Preview: \(error.localizedDescription)")
+            previewFailed(error)
         }
     }
 
     /// Dropping the preview makes the next hover try again and report again, instead of waiting on a dead player.
     private func previewFailed(_ error: Error) {
         preview = nil
+        previewBroken = true
         bubble.hide()
         bar.showFeedback("Preview: \(error.localizedDescription)")
     }
@@ -153,7 +160,20 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
 
     func windowDidMove(_ notification: Notification) { reportFrame() }
 
-    func windowDidResize(_ notification: Notification) { reportFrame() }
+    func windowDidResize(_ notification: Notification) {
+        scrubHovered(nil)
+        reportFrame()
+    }
+
+    func windowWillEnterFullScreen(_ notification: Notification) { scrubHovered(nil) }
+
+    func windowWillExitFullScreen(_ notification: Notification) { scrubHovered(nil) }
+
+    func windowWillMiniaturize(_ notification: Notification) { scrubHovered(nil) }
+
+    func windowDidBecomeMain(_ notification: Notification) { onMediaStateChanged?() }
+
+    func windowDidResignMain(_ notification: Notification) { onMediaStateChanged?() }
 
     /// A full-screen window reports nothing: the frame to bring back is the one it had before.
     private func reportFrame() {
@@ -185,9 +205,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
 
     private func performInterface(_ action: InterfaceAction) {
         switch action {
-        case .fullscreen:
-            scrubHovered(nil)  // the strip moves under the pointer without telling it the pointer left
-            window?.toggleFullScreen(nil)
+        case .fullscreen: window?.toggleFullScreen(nil)
         case .toggleBar:
             scrubHovered(nil)
             content.barHidden.toggle()
@@ -221,7 +239,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         case .paused(let paused):
             bar.setPaused(paused)
             isPlaying = !paused
-            onPlayingChanged?()
+            onMediaStateChanged?()
         case .speed(let speed): bar.setSpeed(speed)
         case .volume(let volume): bar.setVolume(volume)
         case .fileLoaded, .playbackRestart, .muted, .endOfFile: break

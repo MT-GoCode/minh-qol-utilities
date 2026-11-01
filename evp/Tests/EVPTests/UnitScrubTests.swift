@@ -17,4 +17,8 @@ final class UnitScrubTests: XCTestCase {
         XCTAssertEqual(ScrubMath.tooltip(fraction: 1, duration: 3892), "1:04:52")
         XCTAssertEqual(ScrubMath.tooltip(fraction: 0.5, duration: 0), "0:00", "before the duration is known")
     }
+
+    func testTheSpeedLabelKeepsTheEnginesPrecision() {
+        XCTAssertEqual([1, 1.3, 1.25, 0.05, 10.5, 100].map(PlaybackLimits.label(speed:)), ["1.0x", "1.3x", "1.25x", "0.05x", "10.5x", "100.0x"])
+    }
 }

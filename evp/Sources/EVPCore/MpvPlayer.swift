@@ -98,7 +98,20 @@ public final class MpvPlayer {
     private var renderContext: OpaquePointer?
 
     /// Lets the wakeup callback (any thread) reach the player without keeping it alive.
-    private final class WakeBox { weak var player: MpvPlayer? }
+    /// `pending` keeps a frame's burst of wakeups to one main-queue block: `drain` reads every waiting event anyway.
+    private final class WakeBox {
+        weak var player: MpvPlayer?
+        private let lock = NSLock()
+        private var pending = false
+
+        func wake() {
+            guard lock.withLock({ defer { pending = true }; return !pending }) else { return }
+            DispatchQueue.main.async {
+                self.lock.withLock { self.pending = false }  // before draining: an event after this point schedules another drain
+                self.player?.drain()
+            }
+        }
+    }
 
     public convenience init() throws { try self.init(output: .headless) }
 
@@ -121,8 +134,7 @@ public final class MpvPlayer {
         // mpv holds wakeup_lock while calling the callback, and setting it to nil takes the same lock,
         // so deinit cannot release `wake` under a running callback.
         mpv_set_wakeup_callback(h, { ctx in
-            let box = Unmanaged<WakeBox>.fromOpaque(ctx!).takeUnretainedValue()
-            DispatchQueue.main.async { box.player?.drain() }
+            Unmanaged<WakeBox>.fromOpaque(ctx!).takeUnretainedValue().wake()
         }, wake.toOpaque())
         for observed in Observed.allCases {
             try Self.check(mpv_observe_property(h, observed.rawValue, observed.name, observed.format))
