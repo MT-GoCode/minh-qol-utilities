@@ -32,9 +32,9 @@ func segs(_ lines: [Line], src: String) -> [Seg] {
     lines.filter { $0.src.rawValue == src }.map { Seg(start: $0.start, end: $0.end, text: $0.text) }
 }
 
-func makeEngine(_ root: URL) async throws -> (Engine, TranscriptStore) {
+func makeEngine(_ root: URL, config: ConfigStore = ConfigStore()) async throws -> (Engine, TranscriptStore) {
     let store = try TranscriptStore(paths: Paths(root: root))
-    return (Engine(transcriber: try await Models.transcriber.value, embedder: try await Models.embedder.value, vad: try await Models.vad.value, store: store, config: ConfigStore()), store)
+    return (Engine(transcriber: try await Models.transcriber.value, embedder: try await Models.embedder.value, vad: try await Models.vad.value, store: store, config: config), store)
 }
 
 func awaitEnds(_ engine: Engine, _ n: Int) async -> [SourceEnd] {

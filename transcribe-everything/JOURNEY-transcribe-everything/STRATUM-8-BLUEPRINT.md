@@ -228,3 +228,4 @@ Menu, `Microphone` checkmark, failure display (S9–S12); device-change policy b
 - Test 8 bounds both comparisons at 3%: identical runs measured 1.14% apart, voice processing 54%.
 - A restart cancels the stall watcher and starts a new one from the new capture. Each capture gets a 5 s grace before the guard counts (see DECISIONS).
 - Human gate pending: Minh's AirPods, lid and sleep checks.
+- The tap format comes from the bound device's nominal rate and stream configuration: with AirPods as the default input, `outputFormat(forBus:)` stayed at their 24 kHz and the tap raised an uncatchable exception (found when real AirPods connected during a test).

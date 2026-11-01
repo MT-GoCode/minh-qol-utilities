@@ -5,7 +5,7 @@ set -uo pipefail
 cd "$(dirname "$0")"
 caffeinate -i -w $$ &  # an idle sleep mid-run would fail the timed tests for nothing
 out="$PWD/test-results/$(date +%Y%m%d-%H%M%S)"; mkdir -p "$out"
-alone='AppTests|AttachTests|BarTests|CaptureTests|InstallTests|LiveTests|MicTests|OverlayTests|SelectionTests'
+alone='AppTests|AttachTests|BarTests|CaptureTests|ConfigTests|InstallTests|LiveTests|MicTests|OverlayTests|SelectionTests'
 # --filter arguments are alternatives, so the timed pass needs one pattern for "alone and matching".
 filter=(${1:+--filter "$1"}); aloneFilter="(?=.*($alone))(?=.*(${1:-}))"; skip=(${2:+--skip "$2"})
 swift build -c release --build-tests 2>&1 | tee "$out/log.txt"; status=${PIPESTATUS[0]}

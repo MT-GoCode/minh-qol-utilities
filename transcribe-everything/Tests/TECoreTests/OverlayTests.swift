@@ -116,7 +116,7 @@ import XCTest
         try await sleepSeconds(0.3)  // a redraw still queued from `say` would otherwise pick up the new font and hide a missing subscription
         var c = Config()
         c.fontSize = 31
-        await r.config.set(c)
+        try await r.config.set(c)
         try await eventually("font") { size() == 31 }
     }
 

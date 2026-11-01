@@ -114,3 +114,5 @@ Each mutant: one edit, the named test red, revert, green.
 # Build findings (supersede the sections above)
 - `setFrameAutosaveName` returns false for a name a live window holds, so tests 1 and 3 release it from the first panel before opening a second, as a relaunch does. The app has one overlay.
 - No `clamp`: a mutant removing it survived, because AppKit already moves a restored off-screen frame onto a screen. Test 3 stays and proves the behaviour.
+- Test 8 cannot prove a bar action through a synthesized click: it reaches the right button but does not finish NSButton's tracking. It proves first mouse and key behaviour; `performClick` proves the action; the human gate proves the real mouse.
+- No `BarButton`: a stock `NSButton` already accepts first mouse here (a mutant removing the override survived, asked with a real event). The test keeps asserting it.

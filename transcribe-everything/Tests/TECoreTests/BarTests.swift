@@ -135,22 +135,21 @@ import XCTest
         XCTAssertTrue(o.text.visibleRect.contains(lm.lineFragmentRect(forGlyphAt: lm.numberOfGlyphs - 1, effectiveRange: nil).insetBy(dx: 1, dy: 1)))
     }
 
-    func testBarClickNeverTakesTheKeyboardButTextClickDoes() async throws {
+    /// A synthesized click does not finish NSButton's tracking, so the action itself is proven by `performClick` above and by Minh's real mouse. SelectionTests proves a text click does take the keyboard.
+    func testBarClickNeverTakesTheKeyboard() async throws {
         try XCTSkipIf(AppHarness.screenLocked, "screen locked: a synthesized click reaches no control there")
         let r = try OverlayRig(self), o = r.overlay!
         r.attached = [A]
-        try await r.say("A", "Old line.")
-        r.time.advance(by: 30)
+        try await r.say("A", "Hello there.")
         await o.refresh().value
         let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let expand: NSButton = view(o, "expand")
-        click(o.panel, atWindowPoint: expand.convert(NSPoint(x: expand.bounds.midX, y: expand.bounds.midY), to: nil))
-        await o.refresh().value
-        XCTAssertEqual(o.text.string, "Old line.", "the action fired through the real dispatch")
+        let down = NSEvent.mouseEvent(with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: o.panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+        XCTAssertTrue(expand.acceptsFirstMouse(for: down), "a click on the bar must act without the panel being key")
+        let onBar = expand.convert(NSPoint(x: expand.bounds.midX, y: expand.bounds.midY), to: nil)
+        o.pollMouse(at: o.panel.convertPoint(toScreen: onBar), pressed: 0)
+        click(o.panel, atWindowPoint: onBar)
         XCTAssertFalse(o.panel.isKeyWindow)
-        let used = o.text.layoutManager!.lineFragmentUsedRect(forGlyphAt: 0, effectiveRange: nil)
-        click(o.panel, atWindowPoint: o.text.convert(NSPoint(x: used.midX, y: used.midY), to: nil))
-        XCTAssertTrue(o.panel.isKeyWindow)
         XCTAssertEqual(NSWorkspace.shared.frontmostApplication?.processIdentifier, front)
     }
 }

@@ -29,9 +29,7 @@ public final class CaptionText: NSTextView {
     public override func dragSelection(with e: NSEvent, offset: NSSize, slideBack: Bool) -> Bool { false }  // highlight and copy only
 }
 
-/// A click on the bar must act even though the panel is not key.
-class BarButton: NSButton { override func acceptsFirstMouse(for e: NSEvent?) -> Bool { true } }
-final class Grip: BarButton { override func mouseDown(with e: NSEvent) { window!.performDrag(with: e) } }
+final class Grip: NSButton { override func mouseDown(with e: NSEvent) { window!.performDrag(with: e) } }
 
 @MainActor public final class Overlay: NSObject {
     static let width = 760.0  // the probed panel, confirmed by Minh's real mouse
@@ -44,7 +42,7 @@ final class Grip: BarButton { override func mouseDown(with e: NSEvent) { window!
     public let scroll = NSScrollView()
     let bar = NSView()
     private let config: ConfigStore, attached: @MainActor () -> Set<SourceID>, failures: @MainActor () -> [String], time: OverlayTime
-    private let grip = Grip(title: "", target: nil, action: nil), expand = BarButton(title: "", target: nil, action: nil), eye = BarButton(title: "", target: nil, action: nil)
+    private let grip = Grip(title: "", target: nil, action: nil), expand = NSButton(title: "", target: nil, action: nil), eye = NSButton(title: "", target: nil, action: nil)
     private let note = NSTextField(labelWithString: "")
     /// The one copy: the eye image, the menu title and the panel height derive from it.
     public private(set) var captionsHidden = false {
@@ -107,7 +105,7 @@ final class Grip: BarButton { override func mouseDown(with e: NSEvent) { window!
         eye.symbolConfiguration = .init(pointSize: 18, weight: .semibold)
         eye.contentTintColor = .white
         eye.image = Self.eyeImage(hidden: false)
-        for (i, (control, id)) in [(grip as BarButton, "grip"), (expand, "expand"), (eye, "eye")].enumerated() {
+        for (i, (control, id)) in [(grip as NSButton, "grip"), (expand, "expand"), (eye, "eye")].enumerated() {
             control.isBordered = false
             control.identifier = NSUserInterfaceItemIdentifier(id)
             control.frame = NSRect(x: 4 + 28 * Double(i), y: 2, width: 24, height: 24)

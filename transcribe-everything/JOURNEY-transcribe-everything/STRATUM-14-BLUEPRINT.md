@@ -74,3 +74,9 @@ Allowance: tests 1–7 a few seconds each; test 8 two unpaced conversation runs 
 4. Mutants of tests 2–6 and 8, one at a time (edit, `./test.sh Config`, red, revert, green). `config.md` lands in the results folder.
 5. Whole `./test.sh` once.
 6. **Human gate.** `./build.sh && open ~/Applications/TranscribeEverything.app`; attach an app (S10) playing speech, open the menu, drag the Font size slider: captions resize live and the thumb snaps to whole numbers. In an editor set `windowSeconds` to 5 in `~/.transcribe-everything/config.json` and save: older captions leave sooner. Break the JSON: the menu shows the red reason under the slider and the captions keep their size; fix it and the reason clears.
+
+# Build findings (supersede the sections above)
+- Measured: 16 segments at minSilence 0.25, as pinned.
+- Test 8 uses a source gated before its first chunk, so the edit lands after the run read the config: a mutant dropping the read at each segment survived the blueprint's version, which started a new source after the edit.
+- `ConfigStore.update` reads and writes as one step for the slider; a file edit in between is not overwritten.
+- Added: a deleted file is invalid and not recreated.

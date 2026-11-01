@@ -175,7 +175,9 @@ public final class MicSource: AudioSource {
         AudioUnitGetProperty(input.audioUnit!, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &bound, &n)
         let name = deviceName(bound)
         guard transport(bound) == kAudioDeviceTransportTypeBuiltIn else { throw MicError.notBuiltIn(name) }
-        input.installTap(onBus: 0, bufferSize: 4096, format: input.outputFormat(forBus: 0)) { buf, _ in onBuffer(buf) }
+        // From the bound device, not the node: after selection the node still reports the default input's format (24 kHz for AirPods in call mode), and a tap with a mismatched format raises an exception nothing can catch.
+        guard let format = hardwareFormat(bound) else { throw MicError.unsupportedFormat(name) }
+        input.installTap(onBus: 0, bufferSize: 4096, format: format) { buf, _ in onBuffer(buf) }
         try engine.start()
         return Capture(device: BoundDevice(id: bound, name: name), stop: {
             engine.stop()
@@ -196,6 +198,19 @@ public final class MicSource: AudioSource {
             var streams: UInt32 = 0
             return AudioObjectGetPropertyDataSize(id, &st, 0, nil, &streams) == noErr && streams > 0
         }
+    }
+
+    private static func hardwareFormat(_ id: AudioObjectID) -> AVAudioFormat? {
+        var a = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyNominalSampleRate, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var rate: Float64 = 0, n = UInt32(MemoryLayout<Float64>.size)
+        guard AudioObjectGetPropertyData(id, &a, 0, nil, &n, &rate) == noErr else { return nil }
+        a = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreamConfiguration, mScope: kAudioObjectPropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectGetPropertyDataSize(id, &a, 0, nil, &n) == noErr else { return nil }
+        let list = UnsafeMutableRawPointer.allocate(byteCount: Int(n), alignment: MemoryLayout<AudioBufferList>.alignment)
+        defer { list.deallocate() }
+        guard AudioObjectGetPropertyData(id, &a, 0, nil, &n, list) == noErr else { return nil }
+        let channels = UnsafeMutableAudioBufferListPointer(list.assumingMemoryBound(to: AudioBufferList.self)).reduce(0) { $0 + $1.mNumberChannels }
+        return AVAudioFormat(standardFormatWithSampleRate: rate, channels: channels)
     }
 
     private static func transport(_ id: AudioObjectID) -> UInt32? {
