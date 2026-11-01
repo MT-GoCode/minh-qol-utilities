@@ -34,4 +34,24 @@ final class E2ELaunchTests: E2ETestCase {
         while !app!.application.isTerminated, Date() < deadline { RunningApp.spin() }
         XCTAssertTrue(app!.application.isTerminated, "the app kept running with no video")
     }
+
+    /// mpv's avfoundation output keeps asking for audio while paused and can spin a core for hours; the trigger cannot be
+    /// provoked on demand, so this checks which output runs, from the stacks of the running app.
+    func testSoundGoesThroughCoreAudio() throws {
+        app = try RunningApp.launch([try Fixtures.url("tv.mp4").path])
+        _ = try app!.wait(for: "time") { !$0.isEmpty }
+        sleep(1)  // playing, so the audio output is live
+        let sample = Process()
+        sample.executableURL = URL(fileURLWithPath: "/usr/bin/sample")
+        sample.arguments = [String(app!.application.processIdentifier), "2"]
+        let out = Pipe()
+        sample.standardOutput = out
+        sample.standardError = Pipe()
+        try sample.run()
+        let stacks = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        sample.waitUntilExit()
+        XCTAssertFalse(stacks.isEmpty)
+        XCTAssertFalse(stacks.contains("avfoundation event"), "the avfoundation audio output is running")
+        XCTAssertTrue(stacks.contains("render_cb_lpcm"), "mpv's CoreAudio callback is not in the stacks")
+    }
 }

@@ -78,7 +78,8 @@ public final class MpvPlayer {
         fileprivate var options: [(String, String)] {
             switch self {
             case .headless: return [("vo", "null"), ("ao", "null")]
-            case .video: return [("vo", "libmpv")]
+            // coreaudio: mpv's default on macOS, avfoundation, can spin a core at 100% while a video sits paused.
+            case .video: return [("vo", "libmpv"), ("ao", "coreaudio")]
             case .preview: return [("vo", "null"), ("ao", "null"), ("aid", "no"), ("vf", "scale=320:-2"), ("screenshot-format", "jpg")]
             }
         }
