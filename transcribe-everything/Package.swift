@@ -9,7 +9,7 @@ let package = Package(
         .target(name: "TECore", dependencies: ["FluidAudio"]),
         .target(name: "TEUI", dependencies: ["TECore", "FluidAudio"]),
         .executableTarget(name: "TranscribeEverything", dependencies: ["TECore", "TEUI", "FluidAudio"]),
-        .testTarget(name: "TECoreTests", dependencies: ["TECore", "FluidAudio"]),
+        .testTarget(name: "TECoreTests", dependencies: ["TECore", "TEUI", "FluidAudio"]),
     ],
     swiftLanguageModes: [.v5]
 )

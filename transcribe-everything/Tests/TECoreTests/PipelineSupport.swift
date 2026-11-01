@@ -66,7 +66,7 @@ func truncated(_ url: URL, frames: Int, in dir: URL) throws -> URL {
     return out
 }
 
-struct Boom: Error {}
+struct Boom: Error, CustomStringConvertible { var description = "boom" }
 
 /// Forwards `base` and throws when it reaches a chunk at or past `failAt`.
 struct FailingSource: TECore.AudioSource {

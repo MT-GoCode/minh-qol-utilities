@@ -350,3 +350,9 @@ Each mutant: one edit, the single named test red, revert, green.
 ## Steps to attain the human-verifiable result
 1. Order: `Permissions.swift` ⇒ `AppController.swift` ⇒ `Row.swift` ⇒ `MenuBar.swift` ⇒ `swift build` ⇒ `main.swift`, `Package.swift`, `Boom` ⇒ `AppRig.swift`, `LifecycleTests.swift` ⇒ `./test.sh Lifecycle` under pacemaker ⇒ mutants ⇒ full `./test.sh` (S1–S8 unchanged) ⇒ fresh adversarial review.
 2. `./build.sh`; `open ~/Applications/TranscribeEverything.app`: the menu-bar dot is yellow, then green; `ls -t ~/.transcribe-everything/transcripts | head -1` is a new file; the menu shows Running; Stop turns it grey, Start yellow then green, Quit removes the dot and `pgrep -x TranscribeEverything` is empty.
+
+# Build findings (supersede the sections above)
+- `FluidAudio` also exports `AudioSource`, so `TEUI` writes `TECore.AudioSource`.
+- `SystemPermissions.init` is `nonisolated`: it is a default argument of a non-isolated context.
+- Lifecycle cleanup opens the gate first: `stop` waits for the load, and a failed test may have left the gate shut.
+- Real-app check: the engine starts and writes its transcript file. Human gate pending: seeing the dot go yellow then green, Stop grey, Quit removes it.

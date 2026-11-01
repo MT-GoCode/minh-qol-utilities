@@ -158,6 +158,9 @@ Spike code: `spike/` at commit 00bbb05 (Probe = TCC-holding app probes, Bench = 
 - Config file: no partial files and no per-key defaults. An invalid or deleted file keeps the last valid value, the menu shows the reason, and `set` refuses until it is fixed; a deleted file is not recreated. A valid edit applies at the next segment (pipeline) and the next redraw (display).
 - LaunchAgent: `KeepAlive {SuccessfulExit: false}` and `ThrottleInterval 2` (a crash restarts after 1 s measured, 10 s by default; a clean Quit stays quit). `uninstall.sh` keeps `~/.transcribe-everything` unless `--purge`.
 
+## App shell, as built (S9+)
+- **Status items are hosted by `MenuBarAgent` on this macOS** (measured, S9): the app's own pid has no window in `CGWindowListCopyWindowInfo` for its status item. S15's test 8 cannot find it by owner pid; the overlay panel can still be found that way.
+
 ## Review bar (Minh)
 - HIGH and MEDIUM mean a real functionality or robustness defect, or a requirement gap. Polish is LOW and never blocks. No cap on rounds.
 - Attach per app is accepted, though Minh said "window": clicking a Chrome window attaches all of Chrome.
