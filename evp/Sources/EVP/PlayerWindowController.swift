@@ -54,8 +54,6 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         restored = restoring != nil
         if let restoring {
             window.setFrame(restoring.frame.rect, display: false)
-            // The screen it was on may be gone; AppKit would leave the window where nobody can reach it.
-            if !NSScreen.screens.contains(where: { $0.visibleFrame.intersects(restoring.frame.rect) }) { window.center() }
             content.barHidden = restoring.barHidden
         }
         super.init(window: window)
@@ -122,11 +120,12 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     private func scrubHovered(_ hover: (fraction: Double, top: NSPoint)?) {
         guard let hover, duration > 0 else {
             hoverTop = nil
-            previewBroken = false
             return bubble.hide()
         }
-        guard !previewBroken else { return }
+        // Reset where a hover starts, not where one ends: a failure can arrive after the pointer has left.
+        if hoverTop == nil { previewBroken = false }
         hoverTop = hover.top
+        guard !previewBroken else { return }
         do {
             if preview == nil {
                 let made = try FramePreview(file: URL(fileURLWithPath: path))

@@ -14,7 +14,7 @@ extension MpvPlayer: Pausable {
 /// exactly those that are still paused, not videos the user paused by hand and not ones that were opened since. A
 /// resume that throws keeps the whole set remembered, so the next press retries it. If the user already resumed all
 /// of them by hand, the press pauses what plays, as if nothing were remembered. A video that cannot be paused does not
-/// stop the others: the press pauses them all and then throws the first error.
+/// stop the others: the press pauses them all and then throws the first error, and the next press resumes those.
 public final class PauseAll {
     private struct Remembered {
         weak var player: Pausable?

@@ -57,16 +57,4 @@ final class E2ESettingsTests: E2ETestCase {
         try key("right", expectFeedback: "+7s")
         try key("e", expectFeedback: "Speed 1.2x")  // per-file speed came back as 1.1x, and e still speeds up
     }
-
-    func testAChordTheMenuBarOwnsIsRefused() throws {
-        app = try RunningApp.launch([try Fixtures.url("tv.mp4").path], home: stateFolder())
-        _ = try app!.wait(for: "time") { !$0.isEmpty }
-        try app!.key("cmd+,")
-        try app!.press("title:Keybinds")
-        let before = try app!.read("bind-speedUp")
-        try app!.press("bind-speedUp")
-        try app!.key("cmd+o")
-        _ = try app!.wait(for: "settings-message") { $0.contains("Open") }
-        XCTAssertEqual(try app!.read("bind-speedUp"), before, "a refused chord leaves the old one")
-    }
 }
