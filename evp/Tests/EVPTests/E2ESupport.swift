@@ -7,9 +7,6 @@ enum Paths {
     static let app = root.appendingPathComponent("build/EVP.app")
     static let cli = root.appendingPathComponent("bin/evp")
     static let driver = root.appendingPathComponent(".build/evpdrive")
-    /// The `rac` command (runs the driver as the Remote Agent Connector app, which holds the GUI permissions);
-    /// EVP_RAC points at another copy of the script.
-    static let rac = ProcessInfo.processInfo.environment["EVP_RAC"] ?? "/usr/local/bin/rac"
     /// The run's results folder (set by ./test): E2E tests save their screenshots under it.
     static let results = ProcessInfo.processInfo.environment["EVP_RESULTS"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.temporaryDirectory
 }
@@ -152,6 +149,7 @@ final class RunningApp {
     /// is started on its own, as when it is opened from the Dock, to see what it restores. `home` is the state folder;
     /// a test that quits or kills the app and starts it again passes the same one (the caller removes it).
     static func launch(_ arguments: [String], home: URL? = nil, appURL: URL = Paths.app, cli: URL = Paths.cli) throws -> RunningApp {
+        _ = try driver(["check"])
         try waitForNoOtherEVP()
         let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("evp-e2e-\(UUID().uuidString)")
         let home = home ?? scratch.appendingPathComponent("home")
@@ -186,11 +184,11 @@ final class RunningApp {
         guard application.isTerminated else {
             // Evidence for the failure: what was on screen, which windows the app had, and whether it quit late.
             let shot = Paths.results.appendingPathComponent("did-not-quit-\(UUID().uuidString.prefix(8)).png")
-            let windows = (try? driver(["windows", String(application.processIdentifier)])) ?? "no windows listed"
-            _ = try? driver(["snapshot-screen", shot.path], asApp: true)
+            let windows = (try? Self.driver(["windows", String(application.processIdentifier)])) ?? "no windows listed"
+            _ = try? Self.driver(["snapshot-screen", shot.path])
             for line in windows.split(separator: "\n") where !line.contains(#""w":0.0"#) {
                 guard let id = line.split(separator: ",").first?.split(separator: ":").last else { continue }
-                _ = try? driver(["snapshot", String(id), Paths.results.appendingPathComponent("did-not-quit-window-\(id).png").path], asApp: true)
+                _ = try? Self.driver(["snapshot", String(id), Paths.results.appendingPathComponent("did-not-quit-window-\(id).png").path])
             }
             let late = Date().addingTimeInterval(15)
             while !application.isTerminated, Date() < late { Self.spin() }
@@ -208,11 +206,10 @@ final class RunningApp {
         guard application.isTerminated else { throw Failure(description: "EVP survived kill -9") }
     }
 
-    private func driver(_ arguments: [String], asApp: Bool = false) throws -> String {
+    private static func driver(_ arguments: [String]) throws -> String {
         let process = Process()
-        process.executableURL = asApp ? URL(fileURLWithPath: "/bin/bash") : Paths.driver
-        // `rac exec` drops the driver's stderr, so merge it into stdout there.
-        process.arguments = asApp ? [Paths.rac, "exec", "/bin/sh", "-c", "\"$0\" \"$@\" 2>&1", Paths.driver.path] + arguments : arguments
+        process.executableURL = Paths.driver
+        process.arguments = arguments
         let (out, err) = (Pipe(), Pipe())
         process.standardOutput = out
         process.standardError = err
@@ -226,7 +223,7 @@ final class RunningApp {
 
     /// Every player window, largest first (the menu bar adds thin, wide windows, which are left out).
     func playerWindows() throws -> [WindowInfo] {
-        try driver(["windows", String(application.processIdentifier)]).split(separator: "\n").compactMap { line -> WindowInfo? in
+        try Self.driver(["windows", String(application.processIdentifier)]).split(separator: "\n").compactMap { line -> WindowInfo? in
             guard let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Double] else { return nil }
             return WindowInfo(id: Int(json["id"]!), x: json["x"]!, y: json["y"]!, width: json["w"]!, height: json["h"]!)
         }
@@ -239,15 +236,15 @@ final class RunningApp {
         return window
     }
 
-    func windowCount() throws -> Int { try driver(["windows", String(application.processIdentifier)]).split(separator: "\n").count }
+    func windowCount() throws -> Int { try Self.driver(["windows", String(application.processIdentifier)]).split(separator: "\n").count }
 
     /// Presses `id`, waiting for it to appear: the accessibility tree is briefly empty after a window changes Space.
     func press(_ id: String, timeout: TimeInterval = 10) throws {
         let deadline = Date().addingTimeInterval(timeout)
         while true {
-            do { return try { _ = try driver(["press", String(application.processIdentifier), id], asApp: true) }() } catch {
+            do { return try { _ = try Self.driver(["press", String(application.processIdentifier), id]) }() } catch {
                 guard Date() < deadline else {
-                    let seen = (try? driver(["tree", String(application.processIdentifier)], asApp: true)) ?? "no tree"
+                    let seen = (try? Self.driver(["tree", String(application.processIdentifier)])) ?? "no tree"
                     throw Failure(description: "\(error)\naccessibility tree then:\n\(seen.split(separator: "\n").filter { !$0.contains("AXMenu") }.joined(separator: "\n"))")
                 }
                 usleep(200_000)
@@ -256,18 +253,18 @@ final class RunningApp {
     }
 
     /// Runs the accessibility action of `id` whose name contains `action`.
-    func perform(_ id: String, action: String) throws { _ = try driver(["perform", String(application.processIdentifier), id, action], asApp: true) }
+    func perform(_ id: String, action: String) throws { _ = try Self.driver(["perform", String(application.processIdentifier), id, action]) }
 
     func setValue(_ id: String, to value: Double) throws {
-        _ = try driver(["setvalue", String(application.processIdentifier), id, String(value)], asApp: true)
+        _ = try Self.driver(["setvalue", String(application.processIdentifier), id, String(value)])
     }
 
-    func type(_ text: String) throws { _ = try driver(["type", String(application.processIdentifier), text], asApp: true) }
+    func type(_ text: String) throws { _ = try Self.driver(["type", String(application.processIdentifier), text]) }
 
-    func focus(_ id: String) throws { _ = try driver(["focus", String(application.processIdentifier), id], asApp: true) }
+    func focus(_ id: String) throws { _ = try Self.driver(["focus", String(application.processIdentifier), id]) }
 
     func read(_ id: String, attribute: String? = nil) throws -> String {
-        try driver(["read", String(application.processIdentifier), id] + (attribute.map { [$0] } ?? []), asApp: true)
+        try Self.driver(["read", String(application.processIdentifier), id] + (attribute.map { [$0] } ?? []))
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -287,19 +284,19 @@ final class RunningApp {
 
     /// Types `chord` (see `evpdrive key`) into the app; `count` above 1 sends key repeats.
     func key(_ chord: String, count: Int = 1) throws {
-        _ = try driver(["key", String(application.processIdentifier), chord, String(count)], asApp: true)
+        _ = try Self.driver(["key", String(application.processIdentifier), chord, String(count)])
     }
 
     /// Media keys through the system (16 play/pause, 17 next, 18 previous): they reach whichever app the system picks.
-    func media(_ codes: Int...) throws { _ = try driver(["media"] + codes.map(String.init), asApp: true) }
+    func media(_ codes: Int...) throws { _ = try Self.driver(["media"] + codes.map(String.init)) }
 
     func resize(width: Int, height: Int) throws {
-        _ = try driver(["resize", String(application.processIdentifier), String(width), String(height)], asApp: true)
+        _ = try Self.driver(["resize", String(application.processIdentifier), String(width), String(height)])
     }
 
     func snapshot(_ window: WindowInfo) throws -> Pixels {
         let png = scratch.appendingPathComponent("\(UUID().uuidString).png")
-        _ = try driver(["snapshot", String(window.id), png.path], asApp: true)
+        _ = try Self.driver(["snapshot", String(window.id), png.path])
         return try Pixels(png: png)
     }
 

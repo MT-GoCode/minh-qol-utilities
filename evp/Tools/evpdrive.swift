@@ -1,5 +1,6 @@
-// Test driver: synthetic input and window discovery. `key`, `media` and `snapshot` need GUI permissions, so run
-// them as `rac exec`; `windows` works from any shell. Built by ./test into .build/evpdrive.
+// Test driver: synthetic input and window discovery. Most commands need the Accessibility and Screen Recording
+// permissions of whatever started it; `windows` works from any shell. Built by ./test into .build/evpdrive.
+//   evpdrive check                       fail unless this process holds both permissions
 //   evpdrive windows <pid>               one JSON object per window: {"id":N,"x":..,"y":..,"w":..,"h":..}
 //   evpdrive resize <pid> <width> <height>  move the first window to the top-left, then set its frame size (needs Accessibility)
 //   evpdrive press <pid> <id>            press the button with that accessibility identifier, `title:<title>`, or `close:<window title>` (needs Accessibility)
@@ -216,7 +217,15 @@ func snapshot(window: Int, to path: String) {
 }
 
 let args = Array(CommandLine.arguments.dropFirst())
+func checkPermissions() {
+    var missing: [String] = []
+    if !AXIsProcessTrusted() { missing.append("Accessibility") }
+    if !CGPreflightScreenCaptureAccess() { missing.append("Screen Recording") }
+    guard missing.isEmpty else { fail("E2E tests need \(missing.joined(separator: " and ")): run ./test from an app that holds them") }
+}
+
 switch args.first {
+case "check" where args.count == 1: checkPermissions()
 case "windows" where args.count == 2: listWindows(pid: pid_t(int(args[1])))
 case "resize" where args.count == 4: resize(pid: pid_t(int(args[1])), width: Double(int(args[2])), height: Double(int(args[3])))
 case "tree" where args.count == 2: tree(pid: pid_t(int(args[1])))
