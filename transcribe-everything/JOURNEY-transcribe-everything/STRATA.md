@@ -36,7 +36,7 @@ builds `fluidaudiocli` from the pinned checkout to record the oracle (text + wor
   provisional tails in memory only. `snapshot()` + one change notification is the only read path.
 - `Transcriber` — one actor around Ultra with a priority queue (commits first, provisionals round-robin); pads < 0.3 s to 0.3 s; every decode goes through it.
 - `Embedder` — one actor around WeSpeaker (S3).
-- `SpeakerTracker` protocol — `assign(window:) -> Int`, one per `SourceID` for the engine start. `SingleSpeaker` (always 1) in S1–S2, deleted wholesale in S3 for `CentroidTracker`.
+- `CentroidTracker` (S3) — `assign(window:) -> Int`, one per `SourceID` for the engine start. There is one implementation, so no protocol; S2 writes speaker 1 directly.
 - `Engine` — `attach(source)`, `detach(id)`, one `SourcePipeline` per source; reports each source's end or failure. Menu and `verify` use this one path.
 - `render(snapshot:attached:now:expanded:config:) -> Rendered` — pure; the only place display rules live. `Rendered` holds the lines and the next time the result
   changes with no new data (the next expiry).
@@ -55,16 +55,16 @@ human-verifiable results: table of 12 turns: truth, our text, WER.
 STRATUM 2: Segmentation — VAD pipeline to committed JSONL
 description: `SourcePipeline`: streaming Silero VAD per 4096-sample chunk; open-segment buffer; commit = one decode of the closed segment → `Line`; force-cut at maxSegment at the
   lowest-VAD-probability chunk of the last 2 s; flush when the stream ends. `Engine` runs N pipelines over the shared Transcriber.
-  Files: Sources/TECore/{SourcePipeline,Engine,SpeakerTracker}.swift, Tests/TECoreTests/PipelineTests.swift.
+  Files: Sources/TECore/{SourcePipeline,Engine}.swift, Tests/TECoreTests/PipelineTests.swift.
 verifiable execution: conversation ⇒ lines map to the 12 turns by time (14 lines, 2 cuts, as `Bench cut` measured); per turn, joined-line WER ≤ oracle + 1 word per cut; each
-  boundary within ±0.5 s of oracle word times. Continuous ⇒ every line ≤ 12 s, corpus errors ≤ whole-file decode + 1 word per cut (measured 2/159, 0 added). Conversation truncated 1 s
+  boundary within ±0.5 s of oracle word times. Continuous ⇒ every line ≤ 12 s + one chunk, corpus errors ≤ whole-file decode + 1 word per cut (measured 2/159, 0 added). Conversation truncated 1 s
   before the last turn ends ⇒ that turn is committed. Mutations: no flush ⇒ truncated case loses the turn; no force-cut ⇒ one 53 s line.
 human-verifiable results: `cat` of the session JSONL — the conversation line by line.
 
 STRATUM 3: Speakers — word labels from sliding windows
 description: `Embedder`; while speech is open the pipeline embeds 2 s windows at a 0.5 s hop; `CentroidTracker` per source: cosine to running-mean centroids, ≥ speakerThreshold joins the best; a new speaker needs speakerConfirmWindows consecutive windows below it, which keep the previous label meanwhile.
-  Each Ultra word takes its nearest window's label; a commit writes one `Line` per run of same-speaker words; a segment shorter than one window inherits the previous speaker (first ever: 1). `Engine` keeps trackers by `SourceID` for the engine start. `SingleSpeaker` deleted.
-  Files: Sources/TECore/{Embedder,CentroidTracker}.swift, SourcePipeline.swift, Engine.swift, SpeakerTracker.swift, Tests/TECoreTests/SpeakerTests.swift.
+  Each Ultra word takes its nearest window's label; a commit writes one `Line` per run of same-speaker words; a segment shorter than one window inherits the previous speaker (first ever: 1). `Engine` keeps trackers by `SourceID` for the engine start.
+  Files: Sources/TECore/{Embedder,CentroidTracker}.swift, SourcePipeline.swift, Engine.swift, Tests/TECoreTests/{SpeakerTests,PipelineSupport,PipelineTests}.swift.
 verifiable execution: real labelled audio, per word, one-to-one mapping, bound = DECISIONS measurement − 2 points: conversation 3 speakers, ≥ 92%; AMI ≤ 5 speakers, ≥ 94%; VoxConverse 3, 4, 6, 9 speakers exact counts, ≥ 97%, 96%, 91%, 88%; 2-speaker ≤ 4 speakers, ≥ 90%. A line never holds two speakers' labels. Detach then re-attach keeps labels. Mutations: threshold 0 ⇒ 1 speaker; confirm 1 ⇒ AMI over 5; one label per segment ⇒ AMI far below bound; rebuilding the tracker on attach ⇒ re-attach test red.
 human-verifiable results: JSONL of the AMI clip with `spk` following the people.
 
