@@ -16,7 +16,11 @@ extension AppController {
     /// Runs under the bundle that holds Screen Recording, so it captures its own panel in-process.
     @MainActor func overlay(_ s: OverlaySpec) async throws -> [String: Any] {
         NSApplication.shared.setActivationPolicy(.accessory)
-        let id = SourceID(rawValue: "verify"), o = Overlay(config: ConfigStore(), attached: { [] })
+        let id = SourceID(rawValue: "verify"), o = Overlay(config: ConfigStore(), attached: { [] }, autosaveName: "TranscribeEverythingVerify")
+        defer {
+            o.panel.setFrameAutosaveName("")  // a live window keeps its name, and a second overlay step would be refused it
+            o.panel.close()
+        }
         o.bind(store)
         for t in s.lines { try await store.commit([Line(t: Date(), src: id, tag: "v", spk: 1, text: t, start: 0, end: 0)], of: id) }
         await o.refresh().value

@@ -110,3 +110,7 @@ Each mutant: one edit, the named test red, revert, green.
 2. Mutants.
 3. **Human gate.** The S11 gate setup (QuickTime playing `conversation.wav`, attached from the menu). Minh drags the overlay by the grip, clicks ⌃ (older lines appear, scroll), clicks the eye (captions vanish, crossed eye stays), clicks it again, hides and shows from the status menu, and types in TextEdit throughout without losing keyboard focus.
 4. Fresh adversarial review.
+
+# Build findings (supersede the sections above)
+- `setFrameAutosaveName` returns false for a name a live window holds, so tests 1 and 3 release it from the first panel before opening a second, as a relaunch does. The app has one overlay.
+- No `clamp`: a mutant removing it survived, because AppKit already moves a restored off-screen frame onto a screen. Test 3 stays and proves the behaviour.

@@ -42,19 +42,42 @@ final class FakeTime: @unchecked Sendable {
 @MainActor final class OverlayRig {
     let time = FakeTime(base: Date(timeIntervalSince1970: 1_800_000_000))  // 2027-01-15 08:00:00Z
     let config: ConfigStore, store: TranscriptStore
-    var attached: Set<SourceID> = []
+    var attached: Set<SourceID> = [], failures: [String] = []
+    let autosaveName = UUID().uuidString
     private(set) var overlay: Overlay!
     init(_ test: XCTestCase, config: ConfigStore = ConfigStore()) throws {
         _ = NSApplication.shared
         self.config = config
         store = try TranscriptStore(paths: Paths(root: temporaryRoot(test)), start: time.base)
-        overlay = Overlay(config: config, attached: { [unowned self] in attached }, time: time.time)
+        overlay = Overlay(config: config, attached: { [unowned self] in attached }, failures: { [unowned self] in failures }, autosaveName: autosaveName, time: time.time)
         overlay.bind(store)
         let panel = overlay.panel
-        test.addTeardownBlock { @MainActor in panel.close() }
+        let key = "NSWindow Frame \(autosaveName)"
+        test.addTeardownBlock { @MainActor in
+            panel.close()
+            UserDefaults.standard.removeObject(forKey: key)
+        }
     }
     func say(_ src: String, _ text: String, tag: String = "Zoom", spk: Int = 1) async throws {
         let id = SourceID(rawValue: src)
         try await store.commit([Line(t: time.current, src: id, tag: tag, spk: spk, text: text, start: 0, end: 0)], of: id)
     }
+}
+
+func find<T: NSView>(_ id: String, in v: NSView) -> T {
+    func walk(_ v: NSView) -> T? {
+        if v.identifier?.rawValue == id, let t = v as? T { return t }
+        for s in v.subviews { if let t = walk(s) { return t } }
+        return nil
+    }
+    return walk(v)!
+}
+
+private func mouse(_ type: NSEvent.EventType, _ panel: NSPanel, _ p: NSPoint) -> NSEvent {
+    NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+}
+/// The mouse-up is queued first because a control's tracking loop blocks until it arrives.
+@MainActor func click(_ panel: NSPanel, atWindowPoint p: NSPoint) {
+    NSApp.postEvent(mouse(.leftMouseUp, panel, p), atStart: false)
+    panel.sendEvent(mouse(.leftMouseDown, panel, p))
 }
