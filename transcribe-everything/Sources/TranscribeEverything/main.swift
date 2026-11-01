@@ -21,11 +21,15 @@ case "verify" where args.count == 2:
 case nil:
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
-    let session = Session(config: ConfigStore(), onStart: { _ in })
+    let config = ConfigStore()
+    var session: Session!  // the overlay reads the session through closures and the session starts the overlay: neither can be built first
+    let overlay = Overlay(config: config, attached: { Set(session.attached.map(\.id)) })
+    session = Session(config: config, onStart: { overlay.bind($0) })
+    session.observe { overlay.refresh() }
     let catalog = WindowCatalog(permissions: session.permissions)
     let bar = MenuBar(session: session, catalog: catalog, settings: [])
     session.start()
-    withExtendedLifetime((session, catalog, bar)) { app.run() }
+    withExtendedLifetime((session, catalog, bar, overlay)) { app.run() }
 default:
     FileHandle.standardError.write(Data("usage: TranscribeEverything [prefetch | verify <scenario.json>]\n".utf8))
     exit(2)

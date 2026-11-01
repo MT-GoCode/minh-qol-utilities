@@ -242,3 +242,10 @@ Each mutant: one edit, the named test red, revert, green. Tests 1–7 run on any
 3. Mutants.
 4. **Human gate.** `./build.sh`, open the app, play `conversation.wav` in QuickTime, attach QuickTime from Attach to Apps. Minh reads the captions over another app and over a full-screen app, and clicks on empty panel area: the click reaches the app beneath, while a click on a caption line does not.
 5. Fresh adversarial review.
+
+# Build findings (supersede the sections above)
+- `usedRect(for:)` spans the container's full width, so click-through uses each visible line's own used rect: a click beside a short line reaches the app beneath.
+- An empty text view still lays out one line, so an empty text means a zero body.
+- Test 5 allows 1 pt on the scroll origin: AppKit rounds it on a fractional panel height.
+- Test 8 runs with the screen locked too: a window capture of the panel works there as long as the display is awake (measured).
+- The `overlay` op fails with a named error if the panel is not listed within 15 s.

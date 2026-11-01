@@ -375,3 +375,4 @@ Mic (S8), menu/attach/permissions (S9–S10), window catalog, LaunchAgent. `AppS
 - Test 4 checks speakers with `speakerAccuracy` (lifted from `SpeakerTests`). Tests 4 and 7 allow `captureExcess*` words; the oracle bound assumed identical samples.
 - `runCapture` holds the display awake; SCK lists no display while it sleeps. Tests 4–7 call `requireNoFailure()` so a failed source reports its reason.
 - A restart starts the new stream first, adopts it, then stops the old one, so no audio gap exists and the stall guard never fires for a restart (S7 review).
+- Test 4's latency bounds add the run's measured clock drift: a sample's wall time is only known to that drift. One turn measured 31 ms over without it, with 58 ms of drift.
