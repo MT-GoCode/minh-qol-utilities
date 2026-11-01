@@ -16,7 +16,7 @@ Spike code: `spike/` (Probe = TCC-holding app probes, Bench = model benches, *.p
 - Mic is its own stream (an abstract "app").
 - "Delete old transcriptions" menu item; one transcript file per startup keyed by startup time.
 - Overlay: see-through captions, no background. Lines `[first 5 chars of window] [Speaker N] text`;
-  `[tag]` hidden when only one source is attached; `[Speaker N]` hidden unless that source has > 1 speaker.
+  `[tag]` hidden when only one source is attached and the displayed lines come from it alone; `[Speaker N]` hidden unless that source has > 1 speaker.
   Shows the past 20 s or the full sentence. Renders from the offline store (single source of truth).
 - Overlay bar above the lines: **grip (⠿) moves the overlay around the screen**; **⌃ expands to the last
   minute**; **eye icon hides** the overlay. Menu also has Hide/Show (same state).

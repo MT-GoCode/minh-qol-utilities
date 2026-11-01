@@ -10,7 +10,7 @@ REQUIREMENTS-VERBATIM.md.
 2. **Speaker labels per lifecycle.** Within a source, distinct voices become Speaker 1, 2, ... for the
    life of the engine. Speakers do not overlap (assumption).
 3. **See-through caption overlay.** No background, like TV captions. Lines `[tag] [Speaker N] text`;
-   `[tag]` (first 5 chars of the window name) only when > 1 source is attached; `[Speaker N]` only when
+   `[tag]` (first 5 chars of the window name) when > 1 source is attached, or when the displayed lines span > 1 source; `[Speaker N]` only when
    that source has > 1 speaker. Shows the past 20 s or the full sentence.
 4. **Overlay bar.** Grip moves the overlay around the screen; ⌃ expands to the last minute; eye hides
    it. Text can be highlighted and copied.
