@@ -56,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, Settin
         if settings.restoreWindowsOnLaunch { (toRestore, missing) = session.windowsToRestore() }
         store.update { $0.windows = [] }
         let decoupled = { [weak self] in self?.settings.decoupleMediaKeys ?? true }
-        let target = { [weak self] in self?.playingWindow() }
+        let target = { [weak self] in self?.mediaKeyWindow() }
         mediaKeys = MediaKeys(decoupled: decoupled, target: target)
         eventTap = EventTapRoute(decoupled: decoupled, target: target)
     }
@@ -116,9 +116,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, Settin
         }
     }
 
-    /// The window the media keys act on: the main window if it plays, else any playing window.
-    private func playingWindow() -> PlayerWindowController? {
-        players.first { $0.isPlaying && $0.window?.isMainWindow == true } ?? players.first { $0.isPlaying }
+    /// The window the media keys act on, playing or paused: the main window if it is a video, else the newest video.
+    private func mediaKeyWindow() -> PlayerWindowController? {
+        players.first { $0.window?.isMainWindow == true } ?? players.last
     }
 
     /// The window the menus act on: the main window (still the video while Settings is the key window).

@@ -16,6 +16,8 @@ final class E2EMediaKeysTests: E2ETestCase {
         XCTAssertEqual(try app!.wait(for: "feedback") { $0 == "+10s" }, "+10s", "F9 seeks forward by the long step")
         try app!.media(16)
         XCTAssertEqual(try app!.wait(for: "play-pause") { $0 == "▶" }, "▶", "F8 pauses")
+        try app!.media(16)
+        XCTAssertEqual(try app!.wait(for: "play-pause") { $0 == "⏸" }, "⏸", "F8 again resumes: a paused video keeps the keys")
 
         try app!.key("cmd+,")
         try app!.press("setting-decouple")

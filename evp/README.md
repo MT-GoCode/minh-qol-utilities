@@ -32,7 +32,7 @@ stops. A `brew install` can upgrade unrelated packages, so you run it yourself.
 | `,` `.` | one frame back, forward |
 | m, f, tab | mute, full screen, hide the bar |
 | ctrl+space | pause every playing video, again to resume exactly those (works while EVP is in the background) |
-| F7, F8, F9 | back 10 s, play / pause, forward 10 s while a video plays (Settings can keep them out of EVP) |
+| F7, F8, F9 | back 10 s, play / pause, forward 10 s while a video is open, playing or paused (Settings can keep them out of EVP) |
 
 The time `4:52` in the bar: double-click it, type a time (`4:52`, `1:04:52`, `292`, `+30`, `-30`), press Return.
 Escape or clicking away cancels. The strip above the buttons scrubs on click and drag and shows the time under the pointer.
@@ -49,6 +49,9 @@ of its end starts over.
 The bar has buttons for the screenshot (the shown frame, at the video's own size, goes to the clipboard and nowhere
 else), the subtitles and the audio track; the menu bar has the same Audio and Subtitles menus. Buttons that do not fit
 a narrow window fold into the `…` menu.
+
+Hovering the progress strip shows a thumbnail of that moment above it, with the time. A second, silent decoder of the
+same file makes the thumbnails (from the keyframe nearest the pointer), started on the first hover of a window.
 
 ## Layout
 

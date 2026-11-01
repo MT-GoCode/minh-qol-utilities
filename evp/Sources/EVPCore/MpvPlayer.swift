@@ -31,7 +31,7 @@ public final class MpvPlayer {
     public enum Event: Equatable {
         case fileLoaded
         case loadFailed(MpvError)
-        /// Playback (re)started: a seek has landed.
+        /// The first frame of a load, or of a seek that has landed, is ready.
         case playbackRestart
         case time(Double)
         case duration(Double)
@@ -72,11 +72,14 @@ public final class MpvPlayer {
     public enum Output {
         case headless
         case video
+        /// Small silent frames for thumbnails: no sound decoded, every frame scaled to 320 wide, screenshots as JPEG.
+        case preview
 
         fileprivate var options: [(String, String)] {
             switch self {
             case .headless: return [("vo", "null"), ("ao", "null")]
             case .video: return [("vo", "libmpv")]
+            case .preview: return [("vo", "null"), ("ao", "null"), ("aid", "no"), ("vf", "scale=320:-2"), ("screenshot-format", "jpg")]
             }
         }
     }
@@ -110,7 +113,9 @@ public final class MpvPlayer {
         wake.takeUnretainedValue().player = self
         // keep-open: at the end of a file mpv pauses on the last frame instead of unloading it, so position and
         // duration stay readable and MPV_EVENT_END_FILE does not fire (the `endOfFile` property event does); the resume rule near the end relies on this.
-        let options = output.options + [("hwdec", "auto-safe"), ("keep-open", "yes"), ("input-media-keys", "no")]
+        // auto-copy-safe: hardware decoding with each frame copied back to memory. Zero-copy frames stay on the GPU,
+        // where mpv's screenshot cannot read them ("videotoolbox not supported by libswscale").
+        let options = output.options + [("hwdec", "auto-copy-safe"), ("keep-open", "yes"), ("input-media-keys", "no")]
         for (name, value) in options { try Self.check(mpv_set_option_string(h, name, value)) }
         try Self.check(mpv_initialize(h))
         // mpv holds wakeup_lock while calling the callback, and setting it to nil takes the same lock,
@@ -137,7 +142,7 @@ public final class MpvPlayer {
     /// mpv decides the video pipeline when the file opens.
     public func load(_ url: URL, start: Double? = nil) throws {
         precondition(url.isFileURL, "only file URLs can be loaded")
-        precondition(output == .headless || renderContext != nil, "attach the renderer before loading")
+        precondition(output != .video || renderContext != nil, "attach the renderer before loading")
         try command(start.map { ["loadfile", url.path, "replace", "-1", "start=\($0)"] } ?? ["loadfile", url.path])
     }
 
@@ -200,6 +205,9 @@ public final class MpvPlayer {
 
     /// Frame-exact jump to `seconds` from the start.
     public func seek(to seconds: Double) throws { try command(["seek", String(seconds), "absolute+exact"]) }
+
+    /// Jump to the keyframe nearest `seconds`: fast, not frame-exact.
+    public func seek(keyframeNear seconds: Double) throws { try command(["seek", String(seconds), "absolute+keyframes"]) }
 
     public func seek(toFraction fraction: Double) throws { try command(["seek", String(fraction * 100), "absolute-percent+exact"]) }
 
