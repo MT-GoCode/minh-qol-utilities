@@ -43,7 +43,7 @@ func resultsDir() -> URL {
     return URL(fileURLWithPath: p)
 }
 
-func collect(_ source: some AudioSource) async throws -> [Chunk] {
+func collect(_ source: some TECore.AudioSource) async throws -> [Chunk] {
     var out: [Chunk] = []
     for try await c in source.chunks() { out.append(c) }
     return out

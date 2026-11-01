@@ -237,3 +237,8 @@ Speaker embedding or `CentroidTracker` (S3), provisional tails and Transcriber p
 
 # Parent correction (overrides above)
 No `SpeakerTracker` protocol and no `SingleSpeaker`: one implementation needs no protocol. S2 writes `spk: 1` directly; S3 adds `CentroidTracker` as a plain type.
+
+# Code review corrections (built)
+- `Engine.attach` makes the stream synchronously and passes it to the pipeline, so an immediate detach cannot miss it.
+- An end event at or before the segment start commits nothing, replacing `max(e, start + 1)`.
+- `open` is cleared before a commit so a failing commit cannot be re-decoded by the catch flush.
