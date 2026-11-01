@@ -7,7 +7,8 @@ let package = Package(
     dependencies: [.package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.18.0")],
     targets: [
         .target(name: "TECore", dependencies: ["FluidAudio"]),
-        .executableTarget(name: "TranscribeEverything", dependencies: ["TECore", "FluidAudio"]),
+        .target(name: "TEUI", dependencies: ["TECore", "FluidAudio"]),
+        .executableTarget(name: "TranscribeEverything", dependencies: ["TECore", "TEUI", "FluidAudio"]),
         .testTarget(name: "TECoreTests", dependencies: ["TECore", "FluidAudio"]),
     ],
     swiftLanguageModes: [.v5]

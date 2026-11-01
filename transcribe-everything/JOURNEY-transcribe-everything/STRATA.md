@@ -14,7 +14,7 @@ depends on rac. Everything runs in-process with an injected data root unless nam
 
 **`AppHarness`** (tests that need real permissions: `App`, `Capture`, `Mic`, parts of `Overlay`, `Attach`, `Install`): once per run, runs
 `build.sh`, boots out the LaunchAgent if loaded and restores it at the end, and asserts the installed binary's hash equals the fresh
-build. It fails with a clear message if the screen is locked (a locked session gets a silent mic). It launches the app via `open -W -n`
+build. It launches the app via `open -W -n`
 with `verify <scenario.json>` and reads a JSON report; system output is muted during capture and restored after.
 
 **Fixtures** (`test-setup.sh` → `fixtures.py`, uv; into `~/Library/Caches/transcribe-everything/`, never committed and never under the data
@@ -76,7 +76,7 @@ verifiable execution: Deterministic: queued provisionals + one commit ⇒ the co
   non-empty provisional ≤ 0.866 s after oracle onset + measured decode + round-robin wait counted from the queue; commit ≤ 1.28 s after oracle last word + its decode + embed + one in-flight decode + commits queued
   ahead (counted) × decode; queue wait itself is never added. A provisional's text equals a fresh decode of the same samples. Machine load above the measured limit (load average 26 tripled decode time)
   fails the test with that reason, not a timing error.
-A soak of 14,000 growing-prefix decodes and 7,200 embeddings through `Transcriber` and `Embedder` ⇒ footprint growth after the first 4,000 decodes ≤ 20 MB (measured 4 MB) and median decode within 20% of its start (measured flat).
+A soak of 14,000 growing-prefix decodes and 7,200 embeddings through `Transcriber` and `Embedder` ⇒ footprint growth after the first 4,000 decodes ≤ 20 MB (measured 4 MB) and fastest decode per 1,000 within 20% of its start, which other load on the machine barely moves.
 human-verifiable results: per-turn first-text / commit latency table in test-results.
 
 STRATUM 5: Caption render rules — End of headless core Period
@@ -106,7 +106,7 @@ human-verifiable results: session JSONL from a real capture; Minh attaches an ap
 STRATUM 8: Microphone source
 description: `MicSource`: AVAudioEngine, built-in device selected on the input unit, no voice processing, 16 kHz mono chunks, tag `Mic`; reports the bound device; restarts on `AVAudioEngineConfigurationChange`; a buffer gap over 1 s (re-armed after each restart) or no built-in mic (clamshell) fails with the reason.
   Files: Sources/TECore/MicSource.swift, Tests/TECoreTests/MicTests.swift.
-verifiable execution (`AppHarness`): 10 s ⇒ indices advance with wall clock (±1 chunk), samples are not digital zero (mutant zeros ⇒ red), bound device is built-in regardless of default input. QuickTime's captured RMS with the mic attached is within 1% of baseline (repeat baselines differ 0.3%).
+verifiable execution (`AppHarness`; these tests fail with a clear message while the screen is locked, because a locked session gets a silent mic): 10 s ⇒ indices advance with wall clock (±1 chunk), samples are not digital zero (mutant zeros ⇒ red), bound device is built-in regardless of default input. QuickTime's captured RMS with the mic attached is within 1% of baseline (repeat baselines differ 0.3%).
   Mic and QuickTime together ⇒ QuickTime lines carry their tag and render shows tags. Posting the configuration-change notification ⇒ chunks resume. In-process: buffers stopping for over 1 s fails the stream (mutant: no guard ⇒ red).
 human-verifiable results: required gate: Minh reads a sentence with AirPods connected, then connects and disconnects them mid-capture, then sleeps and wakes the Mac: correct `Mic` lines throughout or a visible failure, AirPods stay in normal mode.
 

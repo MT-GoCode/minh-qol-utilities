@@ -13,7 +13,7 @@ final class StoreTests: XCTestCase {
         let a = line("He said \"hi\"\nthen left, é")
         let b = Line(t: Date(timeIntervalSince1970: 1_700_000_002.5), src: SourceID(rawValue: "app"), tag: "Zoom", spk: 2, text: "two", start: 3.25, end: 4.5)
         let c = Line(t: Date(timeIntervalSince1970: 1_700_000_003.75), src: SourceID(rawValue: "x"), tag: "T", spk: 3, text: "three", start: 5.5, end: 6.25)
-        for l in [a, b, c] { try await store.append(l) }
+        for l in [a, b, c] { try await store.commit([l], of: l.src) }
 
         XCTAssertEqual(store.file.lastPathComponent, "2023-11-14T22:13:20.500Z.jsonl")
         XCTAssertEqual(store.file.deletingLastPathComponent().lastPathComponent, "transcripts")
@@ -33,7 +33,7 @@ final class StoreTests: XCTestCase {
         let last = try JSONSerialization.jsonObject(with: Data(rows[2].utf8)) as! [String: Any]
         XCTAssertEqual(last["t"] as? String, "2023-11-14T22:13:23.750Z")
         XCTAssertEqual(last["spk"] as? Int, 3)
-        let snapshot = await store.snapshot()
+        let snapshot = await store.snapshot().lines
         XCTAssertEqual(snapshot, [a, b, c])
 
         let decoder = JSONDecoder()
@@ -52,8 +52,8 @@ final class StoreTests: XCTestCase {
         let a = try TranscriptStore(paths: paths, start: s)
         let b = try TranscriptStore(paths: paths, start: s + 1)
         XCTAssertNotEqual(a.file, b.file)
-        try await a.append(line("a"))
-        try await b.append(line("b"))
+        try await a.commit([line("a")], of: SourceID(rawValue: "mic"))
+        try await b.commit([line("b")], of: SourceID(rawValue: "mic"))
         XCTAssertTrue(try String(contentsOf: a.file, encoding: .utf8).contains("\"a\""))
         XCTAssertFalse(try String(contentsOf: a.file, encoding: .utf8).contains("\"b\""))
         XCTAssertThrowsError(try TranscriptStore(paths: paths, start: s))
@@ -65,7 +65,8 @@ final class StoreTests: XCTestCase {
             for k in 0..<8 {
                 g.addTask {
                     for n in 0..<100 {
-                        try await store.append(Line(t: Date(), src: SourceID(rawValue: "s\(k)"), tag: "t", spk: 1, text: "k\(k)-n\(n)", start: Double(k * 100 + n), end: 0))
+                        let src = SourceID(rawValue: "s\(k)")
+                        try await store.commit([Line(t: Date(), src: src, tag: "t", spk: 1, text: "k\(k)-n\(n)", start: Double(k * 100 + n), end: 0)], of: src)
                     }
                 }
             }
@@ -77,7 +78,90 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(rows.count, 800)
         let texts = try rows.map { (try JSONSerialization.jsonObject(with: Data($0.utf8)) as! [String: Any])["text"] as! String }
         XCTAssertEqual(Set(texts), Set((0..<8).flatMap { k in (0..<100).map { "k\(k)-n\($0)" } }))
-        let count = await store.snapshot().count
+        let count = await store.snapshot().lines.count
         XCTAssertEqual(count, 800)
+    }
+
+    private let srcA = SourceID(rawValue: "A")
+    private func tail(_ src: SourceID, _ text: String) -> Provisional { Provisional(src: src, tag: src.rawValue, spk: 1, text: text) }
+
+    func testCommitEndsTheSegmentAtomicallyAndALateTailIsDropped() async throws {
+        let store = try TranscriptStore(paths: Paths(root: temporaryRoot(self)))
+        var l = line("done")
+        l.src = srcA
+        l.spk = 3
+        var e = await store.epoch(of: srcA)
+        XCTAssertEqual(e, 0)
+        await store.setTail(tail(srcA, "hel"), epoch: 0)
+        var s = await store.snapshot()
+        XCTAssertEqual(s.tails, [tail(srcA, "hel")])
+        e = try await store.commit([l], of: srcA)
+        XCTAssertEqual(e, 1)
+        s = await store.snapshot()
+        XCTAssertEqual(s.lines, [l])
+        XCTAssertEqual(s.tails, [])
+        XCTAssertEqual(s.speakers, [srcA: [1, 3]])
+        await store.setTail(tail(srcA, "late"), epoch: 0)
+        s = await store.snapshot()
+        XCTAssertEqual(s.tails, [])
+        await store.setTail(Provisional(src: srcA, tag: "A", spk: 2, text: "new"), epoch: 1)
+        s = await store.snapshot()
+        XCTAssertEqual(s.tails.map(\.text), ["new"])
+        XCTAssertEqual(s.speakers, [srcA: [1, 2, 3]])
+        await store.setTail(tail(srcA, ""), epoch: 1)
+        s = await store.snapshot()
+        XCTAssertEqual(s.tails, [])
+        e = try await store.commit([], of: srcA)
+        XCTAssertEqual(e, 2)
+        s = await store.snapshot()
+        XCTAssertEqual(s.lines, [l])
+    }
+
+    func testNoReaderSeesALineTogetherWithItsOwnTail() async throws {
+        let store = try TranscriptStore(paths: Paths(root: temporaryRoot(self)))
+        let src = srcA, make = tail
+        let base = line("x")
+        try await withThrowingTaskGroup(of: Void.self) { g in
+            g.addTask {
+                for n in 0..<500 {
+                    await store.setTail(make(src, "t\(n)"), epoch: n)
+                    var l = base
+                    l.text = "t\(n)"
+                    try await store.commit([l], of: src)
+                }
+            }
+            for _ in 0..<4 {
+                g.addTask {
+                    for _ in 0..<2000 {
+                        let s = await store.snapshot()
+                        let committed = Set(s.lines.map(\.text))
+                        XCTAssertTrue(s.tails.allSatisfy { !committed.contains($0.text) })
+                        await Task.yield()
+                    }
+                }
+            }
+            try await g.waitForAll()
+        }
+    }
+
+    func testTailsAreInAttachOrderNotWriteOrder() async throws {
+        let store = try TranscriptStore(paths: Paths(root: temporaryRoot(self)))
+        let a = srcA, b = SourceID(rawValue: "B"), c = SourceID(rawValue: "C")
+        for s in [b, a, c] { _ = await store.epoch(of: s) }
+        for s in [a, c, b] { await store.setTail(tail(s, "x"), epoch: 0) }
+        let order = await store.snapshot().tails.map(\.src)
+        XCTAssertEqual(order, [b, a, c])
+    }
+
+    func testEveryWriteWakesTheReader() async throws {
+        executionTimeAllowance = 60
+        let store = try TranscriptStore(paths: Paths(root: temporaryRoot(self)))
+        var it = store.changes.makeAsyncIterator()
+        await store.setTail(tail(srcA, "x"), epoch: 0)
+        var woke: Void? = await it.next()
+        XCTAssertNotNil(woke)
+        try await store.commit([], of: srcA)
+        woke = await it.next()
+        XCTAssertNotNil(woke)
     }
 }

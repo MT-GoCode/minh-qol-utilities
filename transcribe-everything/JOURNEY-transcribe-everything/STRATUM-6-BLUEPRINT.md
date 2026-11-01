@@ -282,3 +282,12 @@ The refusal for a locked screen has no test: it reads one session key; forging a
 
 ## Not in S6
 Menu, status item, permission requests, `AppSource`, `MicSource`, LaunchAgent plist and `install.sh` (S9–S15). The harness's loaded-agent branch runs for real first in S15. The `verify` grammar has one op; S7+ add theirs.
+
+# Review corrections (apply at build; these override the sections above)
+- No lock check in `AppHarness`: only mic tests need an unlocked session, so S8 adds `requireUnlocked()`.
+- No separate commit step: spike is in history at 00bbb05; `git rm -r spike` in the S6 commit, and DECISIONS cites that hash.
+- `muted`, `isMuted`, `setMuted` and their test move to S7, where the first muted capture happens.
+- No LaunchAgent bootout/restore yet: no agent exists until S15, which adds it with a test.
+- TEUI depends on FluidAudio explicitly.
+- Read the load right before launching the app and evaluate that stored value in the latency test.
+- Add a mutant: `ready` without `assertSameBinary`.

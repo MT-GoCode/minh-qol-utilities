@@ -110,10 +110,10 @@ final class SpeakerTests: XCTestCase {
         let (engine, store) = try await makeEngine(temporaryRoot(self))
         await engine.attach(try FileSource(url: Fixtures.conversationWav, id: id, tag: "conv"))
         _ = await awaitEnds(engine, 1)
-        let first = await store.snapshot()
+        let first = await store.snapshot().lines
         await engine.attach(try FileSource(url: Fixtures.conversationWav, id: id, tag: "conv"))
         _ = await awaitEnds(engine, 1)
-        let second = Array(await store.snapshot()[first.count...])
+        let second = Array(await store.snapshot().lines[first.count...])
         let turns = try Fixtures.turns()
         XCTAssertTrue(Set(second.map(\.spk)).isSubset(of: Set(first.map(\.spk))))
         XCTAssertLessThan(splits(second) { turnOf($0, turns) }, splits(first) { turnOf($0, turns) })  // known voices are recognized at once

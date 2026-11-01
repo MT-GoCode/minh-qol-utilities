@@ -2,7 +2,7 @@
 
 Minh's own words are in REQUIREMENTS-VERBATIM.md. This file records what he decided and what the
 feasibility spike measured (M4 Max, macOS 27, FluidAudio 0.18.0, LibriSpeech test-clean fixtures).
-Spike code: `spike/` (Probe = TCC-holding app probes, Bench = model benches, *.py = fixtures/analysis).
+Spike code: `spike/` at commit 00bbb05 (Probe = TCC-holding app probes, Bench = model benches, *.py = fixtures/analysis); deleted from the tree at S6. Every `spike/...` path in these documents means that commit.
 
 ## Minh's decisions
 - Build our own app (minimal, controllable) at `~/code/minh-qol-utilities/transcribe-everything`,
@@ -133,6 +133,14 @@ Spike code: `spike/` (Probe = TCC-holding app probes, Bench = model benches, *.p
   in config.
 - Settings live in `~/.transcribe-everything/config.json` (Codable defaults). The menu's font-size control
   writes that file; the file is the single owner of every setting.
+
+## Core build (S4–S6)
+- **Latency bounds are computed from the run's own decode records.** A live test bound is `fixed delay + own decode + decode in flight + decodes ahead`, with the embed term measured under contention on the same machine. Queue wait is never added, so a starved commit goes red.
+- **A latency test refuses to run above load 16** (the core count) with `Busy`; it does not pass or fail on a busy machine. Rerun it when the machine is quieter.
+- **The soak and the signed-app decode test assert the fastest decode, not the mean.** The load on this machine comes from other work, so the mean measures that work. Growth in the fastest decode (per 1000 in the soak; of 8 in the app, at most 0.144 s) is what a leak or a wrong compute unit would move.
+- **Live measurements (idle M4 Max, three sources):** first text median 0.32 s, max 0.58 s; commit median 0.52 s, max 1.05 s; decode 42–73 ms. Signed app, 12 s decode: fastest 58 ms.
+- **Soak (one hour of speech, 14,000 decodes):** fastest decode per 1000 flat at 29.6–31.4 ms; footprint 381 MB to a 393–396 MB plateau from decode 4000. No leak and no slowdown.
+- **`build.sh` pins team BULCQM9J2V**: TCC grants are tied to bundle id plus team, so a different identity would silently lose them.
 
 ## Review bar (Minh)
 - HIGH and MEDIUM mean a real functionality or robustness defect, or a requirement gap. Polish is LOW and never blocks. No cap on rounds.

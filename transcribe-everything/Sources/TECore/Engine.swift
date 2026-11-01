@@ -1,4 +1,5 @@
 import FluidAudio
+import Foundation
 
 public struct SourceEnd: Sendable {
     public let id: SourceID
@@ -10,6 +11,7 @@ public actor Engine {
     private let endedContinuation: AsyncStream<SourceEnd>.Continuation
     private let transcriber: Transcriber, embedder: Embedder, vad: VadManager, store: TranscriptStore, config: ConfigStore
     private var trackers: [SourceID: CentroidTracker] = [:]  // for the engine start: detach and re-attach keep labels
+    private let activity = ProcessInfo.processInfo.beginActivity(options: .latencyCritical, reason: "live transcription")
     private var running: [SourceID: (source: any AudioSource, task: Task<Void, Never>)] = [:]
 
     public init(transcriber: Transcriber, embedder: Embedder, vad: VadManager, store: TranscriptStore, config: ConfigStore) {
@@ -21,7 +23,10 @@ public actor Engine {
         self.config = config
     }
 
-    public func attach(_ source: any AudioSource) {
+    deinit { ProcessInfo.processInfo.endActivity(activity) }
+
+    public func attach(_ source: any AudioSource) async {
+        _ = await store.epoch(of: source.id)  // fixes the source's place in the tails: attach order
         precondition(running[source.id] == nil, "source already attached")
         let tracker = trackers[source.id, default: CentroidTracker()]
         trackers[source.id] = tracker
@@ -34,7 +39,7 @@ public actor Engine {
                 try await pipeline.run()
                 error = nil
             } catch let e { error = e }
-            await self.finish(SourceEnd(id: source.id, error: error))
+            self.finish(SourceEnd(id: source.id, error: error))
         })
     }
 

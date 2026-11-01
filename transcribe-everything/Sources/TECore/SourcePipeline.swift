@@ -11,6 +11,10 @@ struct SourcePipeline: Sendable {
     let config: ConfigStore
     let tracker: CentroidTracker
 
+    private struct Offer: Sendable {
+        let epoch: Int, spk: Int, samples: [Float]
+    }
+
     private struct Open {
         var start: Int
         var next: Int  // start of the next unembedded window
@@ -26,13 +30,26 @@ struct SourcePipeline: Sendable {
         var state = VadStreamState.initial()
         var cfg = await config.current
         var open: Open?
+        var epoch = await store.epoch(of: source.id)
+
+        // Newest audio replaces an undecoded older one, so a decode is never stale and never queues up.
+        let (latest, offer) = AsyncStream.makeStream(of: Offer.self, bufferingPolicy: .bufferingNewest(1))
+        let live = Task {
+            for await o in latest {
+                let text = try await transcriber.transcribe(o.samples, priority: .provisional).text
+                await store.setTail(Provisional(src: source.id, tag: source.tag, spk: o.spk, text: text), epoch: o.epoch)
+            }
+        }
 
         // One Line per run of same-speaker words.
         func commit(_ o: Open, _ e: Int) async throws {
             let t0 = Double(o.start) / Double(sr), end = Double(e) / Double(sr)
             let r = try await transcriber.transcribe(Array(samples[(o.start - base)..<(e - base)]))
             let words = buildWordTimings(from: r.tokenTimings!)
-            guard !words.isEmpty else { return }  // a cut in silence or a VAD blip is never a blank caption
+            guard !words.isEmpty else {  // a cut in silence or a VAD blip is never a blank caption, but still ends the segment
+                epoch = try await store.commit([], of: source.id)
+                return
+            }
             let mine = o.wins.filter { $0.mid < e }
             let inherited = await tracker.previous
             let labels = words.map { w -> Int in
@@ -40,16 +57,18 @@ struct SourcePipeline: Sendable {
                 return mine.min { abs(Double($0.mid) / Double(sr) - m) < abs(Double($1.mid) / Double(sr) - m) }?.spk ?? inherited
             }
             let now = Date()
+            var new: [Line] = []
             var lo = 0
             while lo < words.count {
                 var hi = lo + 1
                 while hi < words.count, labels[hi] == labels[lo] { hi += 1 }
-                try await store.append(Line(t: now, src: source.id, tag: source.tag, spk: labels[lo],
-                                            text: words[lo..<hi].map(\.word).joined(separator: " "),
-                                            start: lo == 0 ? t0 : t0 + words[lo].startTime,
-                                            end: hi == words.count ? end : t0 + words[hi - 1].endTime))
+                new.append(Line(t: now, src: source.id, tag: source.tag, spk: labels[lo],
+                                text: words[lo..<hi].map(\.word).joined(separator: " "),
+                                start: lo == 0 ? t0 : t0 + words[lo].startTime,
+                                end: hi == words.count ? end : t0 + words[hi - 1].endTime))
                 lo = hi
             }
+            epoch = try await store.commit(new, of: source.id)
         }
         func flush() async throws {
             guard let o = open else { return }
@@ -93,6 +112,9 @@ struct SourcePipeline: Sendable {
                             try await commit(o, cut)
                         }
                     }
+                    if let o = open, fed > o.start {
+                        offer.yield(Offer(epoch: epoch, spk: await tracker.previous, samples: Array(samples[(o.start - base)..<(fed - base)])))
+                    }
                     // A start event reaches back at most one chunk plus speech padding, so idle keeps two chunks.
                     // A window can straddle a cut, so an open segment keeps from whichever is earlier.
                     let drop = max(0, (open.map { min($0.start, $0.next) } ?? fed - 2 * chunk) - base)
@@ -102,8 +124,12 @@ struct SourcePipeline: Sendable {
             }
         } catch {
             try? await flush()
+            offer.finish()
+            _ = await live.result
             throw error
         }
         try await flush()
+        offer.finish()
+        try await live.value
     }
 }

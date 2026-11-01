@@ -97,7 +97,7 @@ final class PipelineTests: XCTestCase {
         let ends = await awaitEnds(engine, 1)
         XCTAssertNil(ends[0].error)
         XCTAssertEqual(ends[0].id, convID)
-        let lines = await store.snapshot()
+        let lines = await store.snapshot().lines
         XCTAssertEqual(lines.count, 1)  // under one window: one speaker
         XCTAssertTrue((1.0...1.9).contains(lines[0].end), "\(lines[0].end)")
     }

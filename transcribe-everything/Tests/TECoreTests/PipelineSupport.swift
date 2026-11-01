@@ -2,6 +2,7 @@ import AVFoundation
 import FluidAudio
 import TECore
 import XCTest
+import os
 
 enum Models {
     static let transcriber = Task { try await Transcriber.load() }
@@ -49,7 +50,7 @@ func runToEnd(_ sources: [any TECore.AudioSource], _ root: URL) async throws -> 
     let (engine, store) = try await makeEngine(root)
     for s in sources { await engine.attach(s) }
     let ends = await awaitEnds(engine, sources.count)
-    return (await store.snapshot(), ends, store.file)
+    return (await store.snapshot().lines, ends, store.file)
 }
 
 func truncated(_ url: URL, frames: Int, in dir: URL) throws -> URL {
@@ -119,4 +120,24 @@ func splits(_ lines: [Line], by group: (Line) -> Int) -> Int {
 func turnOf(_ l: Line, _ turns: [Fixtures.Turn]) -> Int {
     let mid = (l.start + l.end) / 2
     return turns.firstIndex { $0.start <= mid && mid <= $0.end } ?? -1
+}
+
+/// Yields chunks up to sample `upTo`, then delivers nothing until `stop()`: a live source that has gone quiet.
+final class HangingSource: TECore.AudioSource, @unchecked Sendable {
+    let base: FileSource, upTo: Int
+    var id: SourceID { base.id }
+    var tag: String { base.tag }
+    private let cont = OSAllocatedUnfairLock<AsyncThrowingStream<Chunk, Error>.Continuation?>(initialState: nil)
+    init(base: FileSource, upTo: Int) {
+        self.base = base
+        self.upTo = upTo
+    }
+    func chunks() -> AsyncThrowingStream<Chunk, Error> {
+        AsyncThrowingStream { c in
+            cont.withLock { $0 = c }
+            let t = Task { for try await ch in base.chunks() where ch.index + ch.samples.count <= upTo { c.yield(ch) } }
+            c.onTermination = { _ in t.cancel() }
+        }
+    }
+    func stop() { cont.withLock { $0?.finish() } }
 }

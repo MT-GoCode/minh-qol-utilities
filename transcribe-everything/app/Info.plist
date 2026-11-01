@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleIdentifier</key><string>com.minh.transcribe-everything</string>
+  <key>CFBundleExecutable</key><string>TranscribeEverything</string>
+  <key>CFBundleName</key><string>TranscribeEverything</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>0.0.1</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSUIElement</key><true/>
+  <key>NSMicrophoneUsageDescription</key><string>Transcribes the microphone when you attach it.</string>
+  <key>NSAudioCaptureUsageDescription</key><string>Transcribes audio from the apps you attach.</string>
+</dict></plist>
