@@ -1,0 +1,3 @@
+hotkey register status=0
+HOTKEY ctrl+space
+exit

@@ -1,0 +1,8 @@
+hotkey register status=0
+audio playing=true
+republished
+REMOTE toggle
+REMOTE toggle
+REMOTE next
+REMOTE prev
+exit

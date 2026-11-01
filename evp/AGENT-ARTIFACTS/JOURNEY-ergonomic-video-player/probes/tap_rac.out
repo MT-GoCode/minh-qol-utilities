@@ -1,0 +1,13 @@
+trusted=true
+tap enabled
+TAP key=0 down=true
+TAP key=0 down=false
+TAP keyDown 48
+TAP key=1 down=true
+TAP key=1 down=false
+TAP key=0 down=true
+TAP key=0 down=false
+TAP key=0 down=true
+TAP key=0 down=false
+TAP key=0 down=true
+exit
