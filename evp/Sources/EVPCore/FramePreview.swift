@@ -38,7 +38,9 @@ public final class FramePreview {
 
     private func handle(_ event: MpvPlayer.Event) {
         switch event {
-        case .fileLoaded:
+        // Ready on the load's own restart, not on file-loaded: a seek sent before that restart would take it as its
+        // answer, and every later thumbnail would show the frame of the request before.
+        case .playbackRestart where !loaded:
             loaded = true
             next()
         case .playbackRestart where decoding != nil:
