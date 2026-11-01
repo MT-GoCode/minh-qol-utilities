@@ -8,12 +8,14 @@ public struct SourceEnd: Sendable {
 public actor Engine {
     public nonisolated let ended: AsyncStream<SourceEnd>
     private let endedContinuation: AsyncStream<SourceEnd>.Continuation
-    private let transcriber: Transcriber, vad: VadManager, store: TranscriptStore, config: ConfigStore
+    private let transcriber: Transcriber, embedder: Embedder, vad: VadManager, store: TranscriptStore, config: ConfigStore
+    private var trackers: [SourceID: CentroidTracker] = [:]  // for the engine start: detach and re-attach keep labels
     private var running: [SourceID: (source: any AudioSource, task: Task<Void, Never>)] = [:]
 
-    public init(transcriber: Transcriber, vad: VadManager, store: TranscriptStore, config: ConfigStore) {
+    public init(transcriber: Transcriber, embedder: Embedder, vad: VadManager, store: TranscriptStore, config: ConfigStore) {
         (ended, endedContinuation) = AsyncStream.makeStream(of: SourceEnd.self)
         self.transcriber = transcriber
+        self.embedder = embedder
         self.vad = vad
         self.store = store
         self.config = config
@@ -21,8 +23,11 @@ public actor Engine {
 
     public func attach(_ source: any AudioSource) {
         precondition(running[source.id] == nil, "source already attached")
+        let tracker = trackers[source.id, default: CentroidTracker()]
+        trackers[source.id] = tracker
         // The stream exists before attach returns, so an immediate detach always stops it.
-        let pipeline = SourcePipeline(source: source, chunks: source.chunks(), vad: vad, transcriber: transcriber, store: store, config: config)
+        let pipeline = SourcePipeline(source: source, chunks: source.chunks(), vad: vad, transcriber: transcriber, embedder: embedder,
+                                      store: store, config: config, tracker: tracker)
         running[source.id] = (source, Task {
             let error: Error?
             do {

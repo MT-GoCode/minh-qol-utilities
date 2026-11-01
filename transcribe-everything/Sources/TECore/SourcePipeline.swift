@@ -6,12 +6,16 @@ struct SourcePipeline: Sendable {
     let chunks: AsyncThrowingStream<Chunk, Error>
     let vad: VadManager
     let transcriber: Transcriber
+    let embedder: Embedder
     let store: TranscriptStore
     let config: ConfigStore
+    let tracker: CentroidTracker
 
     private struct Open {
         var start: Int
+        var next: Int  // start of the next unembedded window
         var probs: [(end: Int, p: Float)] = []
+        var wins: [(mid: Int, spk: Int)] = []
     }
 
     /// Returns when the source finishes; rethrows its failure after committing the open segment.
@@ -23,17 +27,34 @@ struct SourcePipeline: Sendable {
         var cfg = await config.current
         var open: Open?
 
-        func commit(_ s: Int, _ e: Int) async throws {
-            let text = try await transcriber.transcribe(Array(samples[(s - base)..<(e - base)])).text
-            // A cut in silence, a VAD blip or a silent tail decodes to nothing; never a blank caption.
-            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-            try await store.append(Line(t: Date(), src: source.id, tag: source.tag, spk: 1, text: text,
-                                        start: Double(s) / Double(sr), end: Double(e) / Double(sr)))
+        // One Line per run of same-speaker words.
+        func commit(_ o: Open, _ e: Int) async throws {
+            let t0 = Double(o.start) / Double(sr), end = Double(e) / Double(sr)
+            let r = try await transcriber.transcribe(Array(samples[(o.start - base)..<(e - base)]))
+            let words = buildWordTimings(from: r.tokenTimings!)
+            guard !words.isEmpty else { return }  // a cut in silence or a VAD blip is never a blank caption
+            let mine = o.wins.filter { $0.mid < e }
+            let inherited = await tracker.previous
+            let labels = words.map { w -> Int in
+                let m = t0 + (w.startTime + w.endTime) / 2
+                return mine.min { abs(Double($0.mid) / Double(sr) - m) < abs(Double($1.mid) / Double(sr) - m) }?.spk ?? inherited
+            }
+            let now = Date()
+            var lo = 0
+            while lo < words.count {
+                var hi = lo + 1
+                while hi < words.count, labels[hi] == labels[lo] { hi += 1 }
+                try await store.append(Line(t: now, src: source.id, tag: source.tag, spk: labels[lo],
+                                            text: words[lo..<hi].map(\.word).joined(separator: " "),
+                                            start: lo == 0 ? t0 : t0 + words[lo].startTime,
+                                            end: hi == words.count ? end : t0 + words[hi - 1].endTime))
+                lo = hi
+            }
         }
         func flush() async throws {
             guard let o = open else { return }
             open = nil
-            try await commit(o.start, base + samples.count)
+            try await commit(o, base + samples.count)
         }
 
         do {
@@ -47,22 +68,34 @@ struct SourcePipeline: Sendable {
                     state = r.state
                     fed += chunk
                     if let e = r.event, e.isStart {
-                        open = Open(start: e.sampleIndex)
                         cfg = await config.current
+                        open = Open(start: e.sampleIndex, next: e.sampleIndex)
                     }
                     open?.probs.append((fed, r.probability))
                     if let e = r.event, e.isEnd, let o = open {
                         open = nil
                         // After a cut landing in the pause, the end event precedes the cut: nothing is left to commit.
-                        if e.sampleIndex > o.start { try await commit(o.start, e.sampleIndex) }
-                    } else if let o = open, fed - o.start >= Int(cfg.maxSegment * Double(sr)) {
-                        let cut = o.probs.filter { $0.end >= fed - 2 * sr }.min { $0.p < $1.p }!.end  // quietest chunk of the last 2 s
-                        open = Open(start: cut, probs: o.probs.filter { $0.end > cut })
-                        try await commit(o.start, cut)
-                        cfg = await config.current
+                        if e.sampleIndex > o.start { try await commit(o, e.sampleIndex) }
+                    } else if var o = open {
+                        let win = Int(cfg.speakerWindow * Double(sr)), hop = Int(cfg.speakerHop * Double(sr))
+                        while o.next + win <= fed {
+                            let w = Array(samples[(o.next - base)..<(o.next + win - base)])
+                            let spk = await tracker.assign(window: try await embedder.embed(w), threshold: cfg.speakerThreshold,
+                                                           confirmWindows: cfg.speakerConfirmWindows)
+                            o.wins.append((o.next + win / 2, spk))
+                            o.next += hop
+                        }
+                        open = o
+                        if fed - o.start >= Int(cfg.maxSegment * Double(sr)) {
+                            let cut = o.probs.filter { $0.end >= fed - 2 * sr }.min { $0.p < $1.p }!.end  // quietest chunk of the last 2 s
+                            open = Open(start: cut, next: o.next, probs: o.probs.filter { $0.end > cut }, wins: o.wins.filter { $0.mid >= cut })
+                            cfg = await config.current
+                            try await commit(o, cut)
+                        }
                     }
                     // A start event reaches back at most one chunk plus speech padding, so idle keeps two chunks.
-                    let drop = max(0, (open?.start ?? fed - 2 * chunk) - base)
+                    // A window can straddle a cut, so an open segment keeps from whichever is earlier.
+                    let drop = max(0, (open.map { min($0.start, $0.next) } ?? fed - 2 * chunk) - base)
                     samples.removeFirst(drop)
                     base += drop
                 }

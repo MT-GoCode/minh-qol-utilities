@@ -15,7 +15,7 @@ final class PipelineTests: XCTestCase {
         XCTAssertEqual(ends.count, 1)
         XCTAssertNil(ends[0].error)
         XCTAssertTrue(lines.allSatisfy { $0.src == convID && $0.tag == "conv" && !$0.text.isEmpty })
-        XCTAssertEqual(lines.count, 14)
+        XCTAssertEqual(lines.count, 14 + splits(lines) { turnOf($0, turns) })
         XCTAssertEqual(cuts(lines), 2)
 
         var groups = [[Line]](repeating: [], count: turns.count)
@@ -50,7 +50,7 @@ final class PipelineTests: XCTestCase {
         let samples: [Float] = try await collect(cont()).flatMap { $0.samples }
         let whole = try await Models.transcriber.value.transcribe(samples).text
         let truth = try Fixtures.continuousText()
-        XCTAssertEqual(lines.count, 5)
+        XCTAssertEqual(lines.count, 5 + splits(lines) { _ in 0 })
         XCTAssertEqual(cuts(lines), 4)
         XCTAssertTrue(lines.allSatisfy { $0.end - $0.start <= 12.0 + 4096.0 / 16000 && !$0.text.isEmpty })
         for (a, b) in zip(lines, lines.dropFirst()) { XCTAssertGreaterThanOrEqual(b.start, a.end) }
@@ -98,7 +98,7 @@ final class PipelineTests: XCTestCase {
         XCTAssertNil(ends[0].error)
         XCTAssertEqual(ends[0].id, convID)
         let lines = await store.snapshot()
-        XCTAssertEqual(lines.count, 1)
+        XCTAssertEqual(lines.count, 1)  // under one window: one speaker
         XCTAssertTrue((1.0...1.9).contains(lines[0].end), "\(lines[0].end)")
     }
 

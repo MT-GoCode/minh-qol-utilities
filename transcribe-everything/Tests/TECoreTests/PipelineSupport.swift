@@ -6,6 +6,7 @@ import XCTest
 enum Models {
     static let transcriber = Task { try await Transcriber.load() }
     static let vad = Task { try await VadManager() }
+    static let embedder = Task { try await Embedder.load() }
 }
 
 extension Fixtures {
@@ -32,7 +33,7 @@ func segs(_ lines: [Line], src: String) -> [Seg] {
 
 func makeEngine(_ root: URL) async throws -> (Engine, TranscriptStore) {
     let store = try TranscriptStore(paths: Paths(root: root))
-    return (Engine(transcriber: try await Models.transcriber.value, vad: try await Models.vad.value, store: store, config: ConfigStore()), store)
+    return (Engine(transcriber: try await Models.transcriber.value, embedder: try await Models.embedder.value, vad: try await Models.vad.value, store: store, config: ConfigStore()), store)
 }
 
 func awaitEnds(_ engine: Engine, _ n: Int) async -> [SourceEnd] {
@@ -108,4 +109,14 @@ struct RechunkedSource: TECore.AudioSource {
         }
     }
     func stop() { base.stop() }
+}
+
+/// Adjacent lines in one group with different speakers.
+func splits(_ lines: [Line], by group: (Line) -> Int) -> Int {
+    zip(lines, lines.dropFirst()).filter { group($0) == group($1) && $0.spk != $1.spk }.count
+}
+
+func turnOf(_ l: Line, _ turns: [Fixtures.Turn]) -> Int {
+    let mid = (l.start + l.end) / 2
+    return turns.firstIndex { $0.start <= mid && mid <= $0.end } ?? -1
 }
